@@ -1,0 +1,20 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[requires]
+python_version = "3.12"
+
+[packages]
+django = "~=5.1"
+django-environ = "~=0.8"
+django-ninja = "1.7.1"
+python-dotenv = "1.2.4"
+psycopg2-binary = "2.9.13"
+pydantic = {extras = ["email"], version = "==2.14.1"}
+django-cors-headers = "4.9.0"
+
+[dev-packages]
+ruff = "0.17.1"
+pre-commit = "4.7.0"
