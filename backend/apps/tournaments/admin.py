@@ -1,11 +1,17 @@
 from django.contrib import admin
 
 from apps.teams.models import EntryPlayer, TournamentEntry
-from apps.tournaments.models import Round, Stage, Tournament
+from apps.tournaments.models import Group, Round, Stage, Tournament
 
 
 class RoundInline(admin.TabularInline):
     model = Round
+    extra = 0
+    fields = ("ord", "name")
+
+
+class GroupInline(admin.TabularInline):
+    model = Group
     extra = 0
     fields = ("ord", "name")
 
@@ -75,7 +81,7 @@ class StageAdmin(admin.ModelAdmin):
     list_filter = ("kind", "tournament__organization")
     search_fields = ("name", "tournament__name", "tournament__slug")
     autocomplete_fields = ("tournament",)
-    inlines = (RoundInline,)
+    inlines = (GroupInline, RoundInline)
 
 
 @admin.register(Round)
@@ -88,4 +94,17 @@ class RoundAdmin(admin.ModelAdmin):
     @admin.display(description="Tournament", ordering="stage__tournament__name")
     def tournament_name(self, obj):
         """Показывает турнир раунда через связанный этап"""
+        return obj.stage.tournament.name
+
+
+@admin.register(Group)
+class GroupAdmin(admin.ModelAdmin):
+    list_display = ("name", "stage", "ord", "tournament_name")
+    list_filter = ("stage__tournament",)
+    search_fields = ("name", "stage__name", "stage__tournament__name")
+    autocomplete_fields = ("stage",)
+
+    @admin.display(description="Tournament", ordering="stage__tournament__name")
+    def tournament_name(self, obj):
+        """Показывает турнир группы через связанный этап."""
         return obj.stage.tournament.name

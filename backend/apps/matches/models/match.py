@@ -5,6 +5,7 @@ from django.db import models
 from django.db.models import F, Q
 
 from apps.tournaments.models.round import Round as TournamentRound
+from apps.tournaments.models.stage import Stage
 
 
 class Match(models.Model):
@@ -27,6 +28,7 @@ class Match(models.Model):
     tournament = models.ForeignKey("tournaments.Tournament", on_delete=models.PROTECT, related_name="matches")
     stage = models.ForeignKey("tournaments.Stage", on_delete=models.PROTECT, related_name="matches")
     round = models.ForeignKey(TournamentRound, null=True, blank=True, on_delete=models.PROTECT, related_name="matches")
+    group = models.ForeignKey("tournaments.Group", null=True, blank=True, on_delete=models.PROTECT, related_name="matches")
     home_entry = models.ForeignKey("teams.TournamentEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="home_matches")
     away_entry = models.ForeignKey("teams.TournamentEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="away_matches")
 
@@ -88,6 +90,10 @@ class Match(models.Model):
             errors["stage"] = "Stage must belong to the selected tournament."
         if self.round_id and self.stage_id and self.round.stage_id != self.stage_id:
             errors["round"] = "Round must belong to the selected stage."
+        if self.group_id and self.stage_id and self.group.stage_id != self.stage_id:
+            errors["group"] = "Group must belong to the selected stage."
+        if self.group_id and self.stage_id and self.stage.kind != Stage.Kind.GROUPS:
+            errors["group"] = "A match can only use a group in a groups stage."
         for field_name in ("home_entry", "away_entry"):
             entry = getattr(self, field_name, None)
             if entry and self.tournament_id and entry.tournament_id != self.tournament_id:

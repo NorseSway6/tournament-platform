@@ -1,5 +1,6 @@
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 from apps.teams.models.player import Player
 from apps.teams.models.team import Team
@@ -16,6 +17,8 @@ class TournamentEntry(models.Model):
     tournament = models.ForeignKey(Tournament, on_delete=models.PROTECT, related_name="entries")
     team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name="entries")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    submitted_at = models.DateTimeField(default=timezone.now, editable=False)
+    decision_comment = models.TextField(blank=True)
 
     class Meta:
         indexes = [models.Index(fields=["tournament", "status"], name="entries_tournament_status_idx")]

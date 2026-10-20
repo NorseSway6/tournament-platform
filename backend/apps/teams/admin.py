@@ -37,7 +37,7 @@ class PlayerAdmin(admin.ModelAdmin):
 
 @admin.register(TournamentEntry)
 class TournamentEntryAdmin(admin.ModelAdmin):
-    list_display = ("team", "tournament", "status")
+    list_display = ("team", "tournament", "status", "submitted_at", "decision_comment")
     list_filter = ("status", "tournament__organization", "tournament")
     search_fields = ("team__name", "tournament__name")
     autocomplete_fields = ("team", "tournament")

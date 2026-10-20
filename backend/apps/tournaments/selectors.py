@@ -1,6 +1,6 @@
 from django.db.models import Prefetch, QuerySet
 
-from apps.tournaments.models import Stage, Tournament
+from apps.tournaments.models import Group, Round, Stage, Tournament
 
 PUBLIC_STATUSES = [
     Tournament.Status.REGISTRATION,
@@ -25,7 +25,13 @@ def public_tournaments(
         queryset.distinct()
         .select_related("organization")
         .prefetch_related(
-            Prefetch("stages", queryset=Stage.objects.order_by("ord", "id"))
+            Prefetch(
+                "stages",
+                queryset=Stage.objects.order_by("ord", "id").prefetch_related(
+                    Prefetch("groups", queryset=Group.objects.order_by("ord", "id")),
+                    Prefetch("rounds", queryset=Round.objects.order_by("ord", "id")),
+                ),
+            )
         )
     )
 

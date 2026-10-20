@@ -154,18 +154,40 @@ def calculate_tournament_standings(tournament: Tournament) -> dict[str, Any]:
     matches_by_stage: dict[int, list[Match]] = {}
     for match in completed_stage_matches(tournament):
         matches_by_stage.setdefault(match.stage_id, []).append(match)
+    fixture_entry_ids: dict[int, set[int]] = {}
+    for match in Match.objects.filter(tournament=tournament, group__isnull=False).values_list(
+        "group_id", "home_entry_id", "away_entry_id"
+    ):
+        fixture_entry_ids.setdefault(match[0], set()).update(
+            entry_id for entry_id in match[1:] if entry_id is not None
+        )
 
     rules = _rules_for(tournament)
-    stages = [
-        {
+    stages = []
+    for stage in tournament_stages(tournament):
+        if stage.kind not in (Stage.Kind.LEAGUE, Stage.Kind.GROUPS):
+            continue
+        stage_matches = matches_by_stage.get(stage.id, [])
+        groups = []
+        if stage.kind == Stage.Kind.GROUPS:
+            # Group membership is currently inferred from scheduled fixtures; no separate roster assignment exists yet.
+            for group in stage.groups.order_by("ord", "id"):
+                group_matches = [match for match in stage_matches if match.group_id == group.id]
+                entry_ids = fixture_entry_ids.get(group.id, set())
+                group_entries = [entry for entry in entries if entry.id in entry_ids]
+                groups.append({
+                    "group_id": group.id,
+                    "group_name": group.name,
+                    "items": _standings_for_stage(group_entries, group_matches, rules),
+                })
+            items = []
+        else:
+            items = _standings_for_stage(entries, stage_matches, rules)
+        stages.append({
             "stage_id": stage.id,
             "stage_name": stage.name,
             "stage_kind": stage.kind,
-            "items": _standings_for_stage(
-                entries, matches_by_stage.get(stage.id, []), rules
-            ),
-        }
-        for stage in tournament_stages(tournament)
-        if stage.kind in (Stage.Kind.LEAGUE, Stage.Kind.GROUPS)
-    ]
+            "items": items,
+            "groups": groups,
+        })
     return {"tournament_id": tournament.id, "stages": stages, "rules": rules}

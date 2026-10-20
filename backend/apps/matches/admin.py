@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from apps.matches.models import Match, MatchEvent, MatchLineup, MatchLineupPlayer, Venue
+from apps.matches.models import (
+    Match,
+    MatchEvent,
+    MatchLineup,
+    MatchLineupPlayer,
+    MatchOfficial,
+    ProtocolCorrectionAudit,
+    Venue,
+)
 
 
 class MatchLineupPlayerInline(admin.TabularInline):
@@ -22,7 +30,7 @@ class MatchEventInline(admin.TabularInline):
     model = MatchEvent
     extra = 0
     can_delete = False
-    fields = ("id", "seq", "type", "entry", "player", "minute", "second", "created_at")
+    fields = ("id", "seq", "type", "entry", "player", "related_player", "period", "clock_ms", "minute", "second", "needs_review", "source", "created_at")
     readonly_fields = fields
     show_change_link = True
 
@@ -103,8 +111,14 @@ class MatchEventAdmin(admin.ModelAdmin):
         "type",
         "entry",
         "player",
+        "related_player",
+        "device_id",
         "minute",
         "second",
+        "period",
+        "clock_ms",
+        "needs_review",
+        "source",
         "created_at",
     )
     list_filter = ("type", "match__tournament", "created_at")
@@ -149,3 +163,31 @@ class VenueAdmin(admin.ModelAdmin):
     list_filter = ("organization",)
     search_fields = ("name", "address", "organization__name")
     autocomplete_fields = ("organization",)
+
+
+@admin.register(MatchOfficial)
+class MatchOfficialAdmin(admin.ModelAdmin):
+    list_display = ("match", "official", "role")
+    list_filter = ("role", "match__tournament")
+    search_fields = ("official__username", "official__display_name", "match__id")
+    autocomplete_fields = ("match", "official")
+
+
+@admin.register(ProtocolCorrectionAudit)
+class ProtocolCorrectionAuditAdmin(admin.ModelAdmin):
+    list_display = ("match", "target_event", "organization", "actor_reference", "created_at")
+    list_filter = ("organization", "created_at")
+    search_fields = ("reason", "actor_reference", "match__id")
+    readonly_fields = tuple(field.name for field in ProtocolCorrectionAudit._meta.fields)
+
+    def has_add_permission(self, request):
+        """Keeps correction audit entries append-only in the admin site."""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """Prevents edits to correction audit entries."""
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """Prevents deletion of correction audit entries."""
+        return False
