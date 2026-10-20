@@ -14,6 +14,7 @@ from config.api_errors import (
     handle_unexpected_error,
     handle_validation_error,
 )
+from apps.identity_access.api.routes import router as identity_router
 from apps.matches.api.routes import router as matches_router
 from apps.matches.api.routes import (
     captain_router as match_captain_router,
@@ -96,3 +97,4 @@ api.add_router("/organizer", team_organizer_router)
 api.add_router("/organizer", match_organizer_router)
 api.add_router("", today_router)
 api.add_router("", teams_router)
+api.add_router("", identity_router)
