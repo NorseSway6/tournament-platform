@@ -1,59 +1,53 @@
+from config.domain_errors import DomainError
 from django.db import transaction
 
-from config.temporary_ids import TEMPORARY_CAPTAIN_ID
 from apps.matches.models import Match, MatchLineup, MatchLineupPlayer
 from apps.teams.models import EntryPlayer, TournamentEntry
 
 
-class LineupActionError(Exception):
-    """Сообщает об ошибке операции капитана с составом на матч."""
-
-    def __init__(self, message: str, status_code: int = 409):
-        super().__init__(message)
-        self.status_code = status_code
 
 
-def captain_entry_for_match(match_id: int) -> tuple[Match, TournamentEntry]:
-    """Находит заявку команды временного капитана среди участников матча."""
+def captain_entry_for_match(match_id: int, captain_id: int) -> tuple[Match, TournamentEntry]:
+    """Находит заявку команды указанного капитана среди участников матча."""
     match = (
         Match.objects.select_related("home_entry__team", "away_entry__team")
         .filter(pk=match_id)
         .first()
     )
     if match is None:
-        raise LineupActionError("Match not found", 404)
+        raise DomainError("Match not found", 404)
 
     entries = [
         entry
         for entry in (match.home_entry, match.away_entry)
-        if entry is not None and entry.team.captain_id == TEMPORARY_CAPTAIN_ID
+        if entry is not None and entry.team.captain_id == captain_id
     ]
     if not entries:
-        raise LineupActionError("The temporary captain does not own a team in this match", 403)
+        raise DomainError("This user does not own a team in this match", 403)
     if len(entries) > 1:
-        raise LineupActionError("The captain owns both teams; lineup is ambiguous")
+        raise DomainError("The captain owns both teams; lineup is ambiguous")
     return match, entries[0]
 
 
-def _lineup_for_captain(lineup_id: int) -> MatchLineup:
-    """Загружает состав только если его команда принадлежит временному капитану."""
+def _lineup_for_captain(lineup_id: int, captain_id: int) -> MatchLineup:
+    """Загружает состав только если его команда принадлежит капитану."""
     lineup = (
         MatchLineup.objects.select_related("match", "entry__team")
-        .filter(pk=lineup_id, entry__team__captain_id=TEMPORARY_CAPTAIN_ID)
+        .filter(pk=lineup_id, entry__team__captain_id=captain_id)
         .first()
     )
     if lineup is None:
         exists = MatchLineup.objects.filter(pk=lineup_id).exists()
         if not exists:
-            raise LineupActionError("Lineup not found", 404)
-        raise LineupActionError("The temporary captain does not own this lineup", 403)
+            raise DomainError("Lineup not found", 404)
+        raise DomainError("This user does not own this lineup", 403)
     return lineup
 
 
 def _editable_match(match: Match) -> None:
     """Разрешает редактирование состава до начала матча."""
     if match.status not in (Match.Status.SCHEDULED, Match.Status.LINEUPS_OPEN):
-        raise LineupActionError("Lineup can only be changed before the match starts")
+        raise DomainError("Lineup can only be changed before the match starts")
 
 
 def _lineup_payload(match: Match, entry: TournamentEntry, lineup: MatchLineup | None) -> dict:
@@ -94,17 +88,19 @@ def _lineup_payload(match: Match, entry: TournamentEntry, lineup: MatchLineup | 
     }
 
 
-def get_captain_match_lineup(match_id: int) -> dict:
+def get_captain_match_lineup(captain_id: int, match_id: int) -> dict:
     """Возвращает сохранённый состав или предзаполненный активным ростером."""
-    match, entry = captain_entry_for_match(match_id)
+    match, entry = captain_entry_for_match(match_id, captain_id)
     lineup = MatchLineup.objects.filter(match=match, entry=entry).first()
     return _lineup_payload(match, entry, lineup)
 
 
-def update_captain_match_lineup(match_id: int, players: list[dict]) -> dict:
+def update_captain_match_lineup(
+    captain_id: int, match_id: int, players: list[dict]
+) -> dict:
     """Заменяет черновой состав указанными активными игроками заявки."""
     with transaction.atomic():
-        match, entry = captain_entry_for_match(match_id)
+        match, entry = captain_entry_for_match(match_id, captain_id)
         match = Match.objects.select_for_update().get(pk=match.pk)
         _editable_match(match)
         lineup, _ = MatchLineup.objects.select_for_update().get_or_create(
@@ -113,11 +109,11 @@ def update_captain_match_lineup(match_id: int, players: list[dict]) -> dict:
             defaults={"status": MatchLineup.Status.DRAFT},
         )
         if lineup.status not in (MatchLineup.Status.DRAFT, MatchLineup.Status.REJECTED):
-            raise LineupActionError("Only a draft or rejected lineup can be edited")
+            raise DomainError("Only a draft or rejected lineup can be edited")
 
         ids = [player["entry_player_id"] for player in players]
         if len(ids) != len(set(ids)):
-            raise LineupActionError("Each roster player can appear only once", 422)
+            raise DomainError("Each roster player can appear only once", 422)
         roster = {
             player.id: player
             for player in EntryPlayer.objects.filter(
@@ -125,7 +121,7 @@ def update_captain_match_lineup(match_id: int, players: list[dict]) -> dict:
             )
         }
         if len(roster) != len(ids):
-            raise LineupActionError("Every lineup player must be active in this team entry", 422)
+            raise DomainError("Every lineup player must be active in this team entry", 422)
 
         lineup.players.all().delete()
         MatchLineupPlayer.objects.bulk_create(
@@ -173,22 +169,22 @@ def _lineup_check_data(lineup: MatchLineup) -> dict:
     }
 
 
-def check_captain_lineup(lineup_id: int) -> dict:
+def check_captain_lineup(captain_id: int, lineup_id: int) -> dict:
     """Возвращает результат проверки доступности состава к отправке."""
-    return _lineup_check_data(_lineup_for_captain(lineup_id))
+    return _lineup_check_data(_lineup_for_captain(lineup_id, captain_id))
 
 
-def submit_captain_lineup(lineup_id: int) -> dict:
+def submit_captain_lineup(captain_id: int, lineup_id: int) -> dict:
     """Проверяет и отправляет состав капитана на проверку."""
     with transaction.atomic():
-        lineup = _lineup_for_captain(lineup_id)
+        lineup = _lineup_for_captain(lineup_id, captain_id)
         lineup = MatchLineup.objects.select_for_update().select_related("match").get(pk=lineup.pk)
         _editable_match(lineup.match)
         if lineup.status not in (MatchLineup.Status.DRAFT, MatchLineup.Status.REJECTED):
-            raise LineupActionError("Only a draft or rejected lineup can be submitted")
+            raise DomainError("Only a draft or rejected lineup can be submitted")
         result = _lineup_check_data(lineup)
         if not result["valid"]:
-            raise LineupActionError("Lineup is incomplete: " + "; ".join(result["issues"]), 422)
+            raise DomainError("Lineup is incomplete: " + "; ".join(result["issues"]), 422)
         lineup.status = MatchLineup.Status.SUBMITTED
         lineup.reject_reason = ""
         lineup.save(update_fields=["status", "reject_reason"])
@@ -196,10 +192,10 @@ def submit_captain_lineup(lineup_id: int) -> dict:
         return result
 
 
-def submit_captain_match_lineup(match_id: int) -> dict:
+def submit_captain_match_lineup(captain_id: int, match_id: int) -> dict:
     """Находит состав капитана матча и отправляет его после проверки."""
-    match, entry = captain_entry_for_match(match_id)
+    match, entry = captain_entry_for_match(match_id, captain_id)
     lineup = MatchLineup.objects.filter(match=match, entry=entry).only("id").first()
     if lineup is None:
-        raise LineupActionError("Save a lineup before submitting it", 409)
-    return submit_captain_lineup(lineup.id)
+        raise DomainError("Save a lineup before submitting it", 409)
+    return submit_captain_lineup(captain_id, lineup.id)

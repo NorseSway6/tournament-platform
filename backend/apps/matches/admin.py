@@ -30,7 +30,21 @@ class MatchEventInline(admin.TabularInline):
     model = MatchEvent
     extra = 0
     can_delete = False
-    fields = ("id", "seq", "type", "entry", "player", "related_player", "period", "clock_ms", "minute", "second", "needs_review", "source", "created_at")
+    fields = (
+        "id",
+        "seq",
+        "type",
+        "entry",
+        "player",
+        "related_player",
+        "period",
+        "clock_ms",
+        "minute",
+        "second",
+        "needs_review",
+        "source",
+        "created_at",
+    )
     readonly_fields = fields
     show_change_link = True
 
@@ -144,18 +158,6 @@ class MatchEventAdmin(admin.ModelAdmin):
     )
     list_select_related = ("match", "entry__team", "player__player")
 
-    def has_add_permission(self, request):
-        """Запрещает создание событий через административную форму"""
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        """Запрещает изменять журнал событий через админку"""
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        """Запрещает удалять записи журнала событий через админку"""
-        return False
-
 
 @admin.register(Venue)
 class VenueAdmin(admin.ModelAdmin):
@@ -175,19 +177,15 @@ class MatchOfficialAdmin(admin.ModelAdmin):
 
 @admin.register(ProtocolCorrectionAudit)
 class ProtocolCorrectionAuditAdmin(admin.ModelAdmin):
-    list_display = ("match", "target_event", "organization", "actor_reference", "created_at")
+    list_display = (
+        "match",
+        "target_event",
+        "organization",
+        "actor_reference",
+        "created_at",
+    )
     list_filter = ("organization", "created_at")
     search_fields = ("reason", "actor_reference", "match__id")
-    readonly_fields = tuple(field.name for field in ProtocolCorrectionAudit._meta.fields)
-
-    def has_add_permission(self, request):
-        """Keeps correction audit entries append-only in the admin site."""
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        """Prevents edits to correction audit entries."""
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        """Prevents deletion of correction audit entries."""
-        return False
+    readonly_fields = tuple(
+        field.name for field in ProtocolCorrectionAudit._meta.fields
+    )

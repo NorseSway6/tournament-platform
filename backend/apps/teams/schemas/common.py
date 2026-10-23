@@ -1,21 +1,22 @@
-from datetime import date
-from typing import Literal
-
 from ninja import Schema
-from pydantic import Field
+
+from apps.teams.schemas.types import (
+    EntryPlayerStatus,
+    TournamentEntryStatus,
+    TournamentStatus,
+)
 
 
 class PersonSummary(Schema):
+    """Минимальные идентификатор и имя публичного участника."""
+
     id: int
     name: str
 
 
-TournamentStatus = Literal["draft", "registration", "ongoing", "finished"]
-TournamentEntryStatus = Literal["pending", "accepted", "rejected", "withdrawn"]
-EntryPlayerStatus = Literal["active", "removed"]
-
-
 class CaptainSummary(Schema):
+    """Публичное имя капитана команды."""
+
     id: int
     name: str
 
@@ -26,6 +27,8 @@ class CaptainSummary(Schema):
 
 
 class TournamentMembership(Schema):
+    """Краткие сведения о турнире, в котором участвует сущность."""
+
     id: int
     slug: str
     name: str
@@ -33,6 +36,8 @@ class TournamentMembership(Schema):
 
 
 class TeamTournamentMembership(TournamentMembership):
+    """Турнир и статус заявки команды на участие в нём."""
+
     entry_status: TournamentEntryStatus
 
     @staticmethod
@@ -62,6 +67,8 @@ class TeamTournamentMembership(TournamentMembership):
 
 
 class TeamOut(Schema):
+    """Публичная карточка команды с капитаном и турнирами."""
+
     id: int
     name: str
     city: str
@@ -74,28 +81,9 @@ class TeamOut(Schema):
         return team.public_entries
 
 
-class CaptainTeamCreateIn(Schema):
-    name: str = Field(min_length=1, max_length=150)
-    city: str = Field(default="", max_length=100)
-
-
-class CaptainTeamPatchIn(Schema):
-    name: str | None = Field(default=None, min_length=1, max_length=150)
-    city: str | None = Field(default=None, max_length=100)
-
-
-class CaptainTeamOut(Schema):
-    id: int
-    name: str
-    city: str
-
-
-class CaptainTeamsOut(Schema):
-    items: list[CaptainTeamOut]
-    total: int
-
-
 class PlayerEntryOut(Schema):
+    """Участие игрока в составе команды и турнира."""
+
     entry_id: int
     number: int
     status: EntryPlayerStatus
@@ -114,6 +102,8 @@ class PlayerEntryOut(Schema):
 
 
 class PlayerOut(Schema):
+    """Публичная карточка игрока и его активных заявок."""
+
     id: int
     first_name: str
     last_name: str
@@ -134,67 +124,3 @@ class PlayerOut(Schema):
     def resolve_entries(player) -> list:
         """Возвращает только публичные активные составы игрока."""
         return player.public_memberships
-
-
-class EntryCreateIn(Schema):
-    team_id: int = Field(ge=1)
-
-
-class EntryTeamOut(Schema):
-    id: int
-    name: str
-    city: str
-
-
-class CaptainEntryOut(Schema):
-    id: int
-    tournament_id: int
-    team: EntryTeamOut
-    status: TournamentEntryStatus
-
-
-class EntryPlayerInput(Schema):
-    player_id: int | None = Field(default=None, ge=1)
-    first_name: str | None = None
-    last_name: str | None = None
-    middle_name: str = ""
-    birth_date: date | None = None
-    number: int = Field(ge=1, le=99)
-
-
-class EntryPlayersUpdateIn(Schema):
-    players: list[EntryPlayerInput]
-
-
-class EntryPlayerOut(Schema):
-    entry_player_id: int
-    player_id: int
-    first_name: str
-    last_name: str
-    middle_name: str
-    birth_date: date | None
-    number: int
-    status: EntryPlayerStatus
-
-
-class EntryPlayersOut(Schema):
-    entry_id: int
-    players: list[EntryPlayerOut]
-
-
-class EntryPlayersReadOut(Schema):
-    entry_id: int
-    players: list[EntryPlayerOut]
-
-
-class EntryDecisionIn(Schema):
-    status: Literal["accepted", "rejected"]
-    decision_comment: str = Field(default="", max_length=2000)
-
-
-class EntryDecisionOut(Schema):
-    id: int
-    tournament_id: int
-    team_id: int
-    status: TournamentEntryStatus
-    decision_comment: str

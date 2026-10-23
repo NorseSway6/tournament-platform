@@ -18,7 +18,7 @@ migrate:
 	docker compose exec -T backend python manage.py migrate
 
 createsuperuser:
-	docker compose exec $(IMAGE_BACKEND) python manage.py createsuperuser
+	docker compose exec backend python manage.py createsuperuser
 
 up:
 	docker compose up -d

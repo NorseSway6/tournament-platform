@@ -59,37 +59,57 @@ class MeMatchContextOut(Schema):
     tournament_id: int
     tournament_name: str
     status: Literal[
-        "scheduled", "lineups_open", "live", "finished", "confirmed",
-        "postponed", "cancelled", "technical",
+        "scheduled",
+        "lineups_open",
+        "live",
+        "finished",
+        "confirmed",
+        "postponed",
+        "cancelled",
+        "technical",
     ]
     scheduled_at: datetime | None
 
 
 class MeCaptainRoleOut(Schema):
+    """Доступная капитану область команд."""
+
     enabled: bool
     teams: list[MeTeamContextOut]
 
 
 class MeOrganizerRoleOut(Schema):
+    """Доступная организатору область организаций и турниров."""
+
     enabled: bool
     organizations: list[MeOrganizationContextOut]
 
 
 class MeJudgeRoleOut(Schema):
+    """Доступная судье область назначенных матчей."""
+
     enabled: bool
     matches: list[MeMatchContextOut]
 
 
+class MeAdminRoleOut(Schema):
+    """Глобальная административная роль платформы."""
+
+    enabled: bool
+
+
 class MeRolesOut(Schema):
+    """Набор ролевых областей профиля."""
+
     captain: MeCaptainRoleOut
     organizer: MeOrganizerRoleOut
     judge: MeJudgeRoleOut
+    admin: MeAdminRoleOut
 
 
 class MeOut(Schema):
-    """Профиль и ролевые области текущего временного пользователя."""
+    """Профиль и ролевые области пользователя access-токена."""
 
-    identity_mode: Literal["temporary"]
     authenticated: bool
     profile: MeProfileOut | None
     roles: MeRolesOut

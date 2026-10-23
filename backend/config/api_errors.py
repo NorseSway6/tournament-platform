@@ -1,9 +1,12 @@
 import logging
 from typing import Any
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404, HttpRequest, HttpResponse
 from ninja import Schema
-from ninja.errors import HttpError, ValidationError
+from ninja.errors import AuthenticationError, HttpError, ValidationError
+
+from config.domain_errors import DomainError
 
 
 logger = logging.getLogger(__name__)
@@ -23,6 +26,59 @@ class ErrorOut(Schema):
     code: str
     message: str
     problems: list[ErrorProblem] | None = None
+
+
+class ApiHttpError(HttpError):
+    """HTTP error carrying field-level details through the shared handler."""
+
+    def __init__(self, status_code: int, message: str, problems=None):
+        super().__init__(status_code, message)
+        self.problems = problems
+
+
+def django_validation_problems(
+    error: DjangoValidationError, location: tuple[str | int, ...] = ("body",)
+) -> list[dict]:
+    """Flattens Django model validation into the public ErrorOut problems shape."""
+    if hasattr(error, "error_dict"):
+        field_errors = error.error_dict.items()
+    else:
+        field_errors = ((None, error.error_list),)
+    problems = []
+    for field, errors in field_errors:
+        for item in errors:
+            for message in item.messages:
+                problems.append(
+                    {
+                        "location": [*location, *([field] if field else [])],
+                        "message": message,
+                        "code": item.code or "invalid",
+                    }
+                )
+    return problems
+
+
+def handle_domain_error(
+    request: HttpRequest, error: DomainError, *, api: Any
+) -> HttpResponse:
+    """Преобразует ожидаемую ошибку бизнес-операции в единый ErrorOut."""
+    problems = getattr(error, "problems", None)
+    validation_error = getattr(error, "validation_error", None)
+    if problems is None and validation_error is not None:
+        problems = django_validation_problems(
+            validation_error,
+            tuple(getattr(error, "validation_location", ("body",))),
+        )
+    status = error.status_code
+    return api.create_response(
+        request,
+        {
+            "code": _error_code(status),
+            "message": str(error),
+            "problems": problems,
+        },
+        status=status,
+    )
 
 
 ERROR_RESPONSES: dict[int, type[ErrorOut]] = {
@@ -63,8 +119,27 @@ def handle_http_error(request: HttpRequest, error: HttpError, *, api: Any) -> Ht
     status = error.status_code
     return api.create_response(
         request,
-        {"code": _error_code(status), "message": str(error), "problems": None},
+        {
+            "code": _error_code(status),
+            "message": str(error),
+            "problems": getattr(error, "problems", None),
+        },
         status=status,
+    )
+
+
+def handle_authentication_error(
+    request: HttpRequest, error: AuthenticationError, *, api: Any
+) -> HttpResponse:
+    """Formats Django Ninja's missing/invalid-auth response as the API contract."""
+    return api.create_response(
+        request,
+        {
+            "code": "unauthorized",
+            "message": "A valid Bearer access token is required",
+            "problems": None,
+        },
+        status=401,
     )
 
 

@@ -1,11 +1,11 @@
 # Football Platform
 
-Монорепозиторий веб-платформы для проведения любительских футбольных турниров. Сейчас реализован публичный read-only API на Django, Django Ninja и PostgreSQL.
+Монорепозиторий веб-платформы для проведения любительских футбольных турниров. Backend использует Django, Django Ninja и PostgreSQL; публичные GET-маршруты доступны гостям, изменяющие операции защищены access-токеном и ролевыми областями.
 
 ## Требования
 
 - Docker Engine и Docker Compose v2;
-- либо Python 3.12 и PostgreSQL 16 для запуска без Docker.
+- либо pyenv с Python 3.12, Pipenv и PostgreSQL 16 для запуска без Docker.
 
 ## Запуск в Docker
 
@@ -34,13 +34,30 @@ docker compose exec backend ruff check .
 
 ## Локальный запуск без Docker
 
-Установите зависимости из `backend/Pipfile`, задайте переменные PostgreSQL из `.env.example`, затем выполните из `backend/`:
+Установите Python через pyenv, затем зависимости из `backend/Pipfile` через Pipenv и задайте переменные PostgreSQL из `.env.example`:
 
 ```bash
-python manage.py migrate
-python manage.py runserver
+pyenv install 3.12.18
+cd backend
+pyenv local 3.12.18
+pipenv install --dev
+pipenv run python manage.py migrate
+pipenv run python manage.py runserver
 ```
+
+В разработке access-токен живёт 15 минут, refresh-токен — до 30 дней и ротируется при обновлении. Для запросов используйте `Authorization: Bearer <access_token>`. Организаторские области назначаются в Django admin в карточке организации или турнира; капитан определяется полем `Team.captain`, судья — назначением `MatchOfficial`.
+
+Если база уже применяла старую миграцию `identity_access.0002_tokensession_userrole`, перенесите сохранённые роли до миграции, удаляющей старую таблицу:
+
+```bash
+pipenv run python manage.py migrate organizations 0003_organizationmember
+pipenv run python manage.py migrate tournaments 0003_tournamentmember
+pipenv run python manage.py backfill_legacy_roles
+pipenv run python manage.py migrate
+```
+
+Команда переносит администраторов и организаторские области и безопасна при повторном запуске. Капитан и судья уже определяются существующими связями `Team.captain` и `MatchOfficial`.
 
 ## Контракт API
 
-Описание маршрутов, примеры и правила таблицы находятся в [docs/api-contract.md](docs/api-contract.md). Текущий API не включает аутентификацию, изменение данных, заявки, составы команд, турнирные группы, live-протоколы и уведомления.
+Описание маршрутов, примеры и правила таблицы находятся в [docs/api-contract.md](docs/api-contract.md). Регистрация, вход, обновление и отзыв токенов доступны в `/api/v1/auth/`; полная ролевая модель описана в API-контракте. Статeless-архитектура не используется: refresh-сессии хранятся в PostgreSQL, а отзыв сессии сразу прекращает действие связанных access-токенов.

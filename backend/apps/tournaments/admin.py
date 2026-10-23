@@ -1,7 +1,17 @@
 from django.contrib import admin
 
 from apps.teams.models import EntryPlayer, TournamentEntry
-from apps.tournaments.models import Group, Round, Stage, Tournament
+from apps.tournaments.models import Group, Round, Stage, Tournament, TournamentMember
+
+
+class TournamentMemberInline(admin.TabularInline):
+    """Keeps tournament-scoped organizer assignments with the tournament."""
+
+    model = TournamentMember
+    extra = 0
+    autocomplete_fields = ("user",)
+    fields = ("user", "role", "created_at")
+    readonly_fields = ("created_at",)
 
 
 class RoundInline(admin.TabularInline):
@@ -54,7 +64,7 @@ class TournamentAdmin(admin.ModelAdmin):
     autocomplete_fields = ("organization",)
     readonly_fields = ("created_at", "updated_at")
     date_hierarchy = "starts_on"
-    inlines = (StageInline, TournamentEntryInline)
+    inlines = (StageInline, TournamentEntryInline, TournamentMemberInline)
     fieldsets = (
         (
             None,
