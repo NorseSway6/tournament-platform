@@ -60,6 +60,16 @@ def get_player(request: HttpRequest, player_id: int):
     return player
 
 
+@router.patch(
+    "/teams/{team_id}", response=api_response(CaptainTeamOut), auth=captain_auth, tags=["Captain"]
+)
+def patch_team(request: HttpRequest, team_id: int, payload: CaptainTeamPatchIn):
+    """Обновляет название или город команды текущего капитана."""
+    return update_captain_team(
+        request_user_id(request), team_id, payload.model_dump(exclude_unset=True)
+    )
+
+
 @captain_router.post("/teams", response=api_response({201: CaptainTeamOut}), auth=access_token_auth)
 def create_team(request: HttpRequest, payload: CaptainTeamCreateIn):
     """Создаёт команду, привязанную к текущему пользователю как к капитану."""
@@ -79,14 +89,6 @@ def my_teams(request: HttpRequest):
     """Возвращает команды текущего капитана и их заявки на турниры."""
     teams = list_captain_teams(request_user_id(request))
     return {"items": teams, "total": len(teams)}
-
-
-@captain_router.patch("/teams/{team_id}", response=api_response(CaptainTeamOut))
-def patch_team(request: HttpRequest, team_id: int, payload: CaptainTeamPatchIn):
-    """Обновляет название или город команды текущего капитана."""
-    return update_captain_team(
-        request_user_id(request), team_id, payload.model_dump(exclude_unset=True)
-    )
 
 
 @captain_router.get("/entries/{entry_id}/players", response=api_response(EntryPlayersReadOut))

@@ -9,8 +9,6 @@ from apps.common.api_errors import api_response
 from apps.identity_access.api.dependencies import access_token_auth, request_user_id
 from apps.matches.access import judge_auth, require_judge_match, require_lease_takeover
 from apps.matches.schemas.events import (
-    MatchEventAppendOut,
-    MatchEventCreate,
     MatchEventsBatchIn,
     MatchEventsBatchOut,
 )
@@ -27,7 +25,6 @@ from apps.matches.selectors import matches_for_date, parse_timezone_name
 from apps.matches.services.organizer import get_match_lineups_for_judge
 from apps.matches.services.protocol import (
     acquire_match_lease,
-    append_match_event,
     append_match_events,
     confirm_match,
     judge_match_ids,
@@ -109,17 +106,6 @@ def takeover_lease(request: HttpRequest, match_id: int):
     """Перехватывает live-матч только при отсутствующей или истёкшей аренде."""
     require_lease_takeover(request, match_id)
     return takeover_match_lease(match_id, request_user_id(request))
-
-
-@judge_router.post(
-    "/matches/{match_id}/events",
-    response=api_response({201: MatchEventAppendOut, 200: MatchEventAppendOut}),
-)
-def post_match_event(request: HttpRequest, match_id: int, payload: MatchEventCreate):
-    """Добавляет или идемпотентно повторяет событие и возвращает новый счёт."""
-    require_judge_match(request, match_id)
-    result, created = append_match_event(match_id, request_user_id(request), payload.model_dump())
-    return (201 if created else 200, result)
 
 
 @judge_router.post(

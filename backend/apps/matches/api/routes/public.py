@@ -7,18 +7,23 @@ from ninja.errors import HttpError
 
 from apps.common.api_errors import api_response
 from apps.common.pagination import paginate
-from apps.matches.schemas.events import MatchEventFeedOut
+from apps.identity_access.api.dependencies import request_user_id
+from apps.matches.access import judge_auth, require_judge_match
+from apps.matches.schemas.events import MatchEventAppendOut, MatchEventCreate, MatchEventFeedOut
 from apps.matches.schemas.public import MatchDetailOut, MatchPage, TodayOut
 from apps.matches.schemas.types import MatchStatus
 from apps.matches.selectors import (
+    get_match_event_feed,
     get_public_match,
     parse_timezone_name,
     public_matches,
     public_matches_for_local_date,
 )
+from apps.matches.services.protocol import append_match_event
 from apps.tournaments.selectors import get_public_tournament
 
 public_router = Router(tags=["Matches"])
+matches_router = Router(tags=["Matches"])
 
 
 @public_router.get(
@@ -60,7 +65,7 @@ def list_tournament_matches(
     return result
 
 
-@public_router.get("/matches/{match_id}", response=api_response(MatchDetailOut))
+@matches_router.get("/{match_id}", response=api_response(MatchDetailOut))
 def get_match(request: HttpRequest, match_id: int):
     """Возвращает публичный матч с лентой событий."""
     match = get_public_match(match_id)
@@ -86,16 +91,27 @@ def today_matches(request: HttpRequest, timezone: str | None = Query(None, max_l
     }
 
 
-@public_router.get("/matches/{match_id}/events", response=api_response(MatchEventFeedOut))
+@matches_router.get("/{match_id}/events", response=api_response(MatchEventFeedOut))
 def list_match_events(
     request: HttpRequest,
     match_id: int,
     after_seq: int = Query(0, ge=0),
 ):
     """Возвращает ленту событий после переданного номера sequence."""
-    from apps.matches.selectors import get_match_event_feed
-
     result = get_match_event_feed(match_id, after_seq)
     if result is None:
         raise HttpError(404, "Match not found")
     return result
+
+
+@matches_router.post(
+    "/{match_id}/events",
+    response=api_response({201: MatchEventAppendOut, 200: MatchEventAppendOut}),
+    auth=judge_auth,
+    tags=["Judge"],
+)
+def post_match_event(request: HttpRequest, match_id: int, payload: MatchEventCreate):
+    """Добавляет или идемпотентно повторяет событие и возвращает новый счёт."""
+    require_judge_match(request, match_id)
+    result, created = append_match_event(match_id, request_user_id(request), payload.model_dump())
+    return (201 if created else 200, result)

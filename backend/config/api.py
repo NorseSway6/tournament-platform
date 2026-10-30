@@ -25,6 +25,9 @@ from apps.matches.api.routes import (
     judge_router as match_judge_router,
 )
 from apps.matches.api.routes import (
+    matches_router,
+)
+from apps.matches.api.routes import (
     organizer_router as match_organizer_router,
 )
 from apps.matches.api.routes import (
@@ -110,6 +113,7 @@ def readiness_check(request):
 # Публичные роутеры
 api.add_router("/tournaments", tournaments_public_router)
 api.add_router("", matches_public_router)
+api.add_router("/matches", matches_router)
 api.add_router("/organizations", organizations_public_router)
 api.add_router("", teams_router)
 
