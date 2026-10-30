@@ -115,9 +115,7 @@ class PlayerOut(Schema):
     def resolve_full_name(player) -> str:
         """Собирает полное имя из публичных полей профиля игрока."""
         return " ".join(
-            part
-            for part in (player.last_name, player.first_name, player.middle_name)
-            if part
+            part for part in (player.last_name, player.first_name, player.middle_name) if part
         )
 
     @staticmethod

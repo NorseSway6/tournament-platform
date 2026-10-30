@@ -2,13 +2,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.matches.models import Match
-from apps.teams.models import TournamentEntry
-from apps.tournaments.models import Stage, Tournament
 from apps.standings_stats.selectors import (
     accepted_entries,
     completed_stage_matches,
     tournament_stages,
 )
+from apps.teams.models import TournamentEntry
+from apps.tournaments.models import GroupEntry, Stage, Tournament
 
 DEFAULT_RULES = {
     "points_for_win": 3,
@@ -44,9 +44,7 @@ class EntryStanding:
 
 def _rules_for(tournament: Tournament) -> dict[str, Any]:
     """Читает правила таблицы из регламента с безопасными значениями MVP"""
-    regulation = (
-        tournament.regulation if isinstance(tournament.regulation, dict) else {}
-    )
+    regulation = tournament.regulation if isinstance(tournament.regulation, dict) else {}
     configured = regulation.get("standings", {})
     if not isinstance(configured, dict):
         configured = {}
@@ -104,9 +102,7 @@ def _sort_key(standing: EntryStanding, tie_breakers: list[str]) -> tuple[Any, ..
         "team_id": standing.entry.team_id,
     }
     descending = {"points", "goal_difference", "goals_for"}
-    return tuple(
-        -values[key] if key in descending else values[key] for key in tie_breakers
-    )
+    return tuple(-values[key] if key in descending else values[key] for key in tie_breakers)
 
 
 def _standings_for_stage(
@@ -117,18 +113,11 @@ def _standings_for_stage(
     for match in matches:
         home = standings.get(match.home_entry_id)
         away = standings.get(match.away_entry_id)
-        if (
-            home is None
-            or away is None
-            or match.home_score is None
-            or match.away_score is None
-        ):
+        if home is None or away is None or match.home_score is None or match.away_score is None:
             continue
         _add_match_result(home, away, match, rules)
 
-    ordered = sorted(
-        standings.values(), key=lambda row: _sort_key(row, rules["tie_breakers"])
-    )
+    ordered = sorted(standings.values(), key=lambda row: _sort_key(row, rules["tie_breakers"]))
     return [
         {
             "position": position,
@@ -161,6 +150,11 @@ def calculate_tournament_standings(tournament: Tournament) -> dict[str, Any]:
         fixture_entry_ids.setdefault(match[0], set()).update(
             entry_id for entry_id in match[1:] if entry_id is not None
         )
+    group_entry_ids: dict[int, set[int]] = {}
+    for group_id, entry_id in GroupEntry.objects.filter(
+        group__stage__tournament=tournament
+    ).values_list("group_id", "entry_id"):
+        group_entry_ids.setdefault(group_id, set()).add(entry_id)
 
     rules = _rules_for(tournament)
     stages = []
@@ -170,24 +164,29 @@ def calculate_tournament_standings(tournament: Tournament) -> dict[str, Any]:
         stage_matches = matches_by_stage.get(stage.id, [])
         groups = []
         if stage.kind == Stage.Kind.GROUPS:
-            # Group membership is currently inferred from scheduled fixtures; no separate roster assignment exists yet.
             for group in stage.groups.order_by("ord", "id"):
                 group_matches = [match for match in stage_matches if match.group_id == group.id]
-                entry_ids = fixture_entry_ids.get(group.id, set())
+                # Explicit assignments are authoritative; fixtures remain a fallback
+                # for groups created before GroupEntry existed.
+                entry_ids = group_entry_ids.get(group.id, fixture_entry_ids.get(group.id, set()))
                 group_entries = [entry for entry in entries if entry.id in entry_ids]
-                groups.append({
-                    "group_id": group.id,
-                    "group_name": group.name,
-                    "items": _standings_for_stage(group_entries, group_matches, rules),
-                })
+                groups.append(
+                    {
+                        "group_id": group.id,
+                        "group_name": group.name,
+                        "items": _standings_for_stage(group_entries, group_matches, rules),
+                    }
+                )
             items = []
         else:
             items = _standings_for_stage(entries, stage_matches, rules)
-        stages.append({
-            "stage_id": stage.id,
-            "stage_name": stage.name,
-            "stage_kind": stage.kind,
-            "items": items,
-            "groups": groups,
-        })
+        stages.append(
+            {
+                "stage_id": stage.id,
+                "stage_name": stage.name,
+                "stage_kind": stage.kind,
+                "items": items,
+                "groups": groups,
+            }
+        )
     return {"tournament_id": tournament.id, "stages": stages, "rules": rules}

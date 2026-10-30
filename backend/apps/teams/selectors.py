@@ -15,9 +15,7 @@ def public_team(team_id: int) -> Team | None:
     return (
         Team.objects.filter(pk=team_id, entries__in=visible_entries)
         .select_related("captain")
-        .prefetch_related(
-            Prefetch("entries", queryset=visible_entries, to_attr="public_entries")
-        )
+        .prefetch_related(Prefetch("entries", queryset=visible_entries, to_attr="public_entries"))
         .first()
     )
 

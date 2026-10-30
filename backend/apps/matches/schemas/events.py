@@ -31,9 +31,7 @@ class EventPlayerSummary(Schema):
         """Собирает публичное имя игрока, связанного с событием"""
         player = entry_player.player
         return " ".join(
-            part
-            for part in (player.last_name, player.first_name, player.middle_name)
-            if part
+            part for part in (player.last_name, player.first_name, player.middle_name) if part
         )
 
 
@@ -143,8 +141,17 @@ class ProtocolEventReplacementIn(Schema):
     """Поля нового события для замены при исправлении протокола."""
 
     type: Literal[
-        "goal", "own_goal", "yellow", "red", "sub", "period_start",
-        "period_end", "pause", "resume", "finish", "note",
+        "goal",
+        "own_goal",
+        "yellow",
+        "red",
+        "sub",
+        "period_start",
+        "period_end",
+        "pause",
+        "resume",
+        "finish",
+        "note",
     ]
     entry_id: int | None = Field(default=None, ge=1)
     entry_player_id: int | None = Field(default=None, ge=1)

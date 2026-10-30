@@ -63,9 +63,7 @@ def get_me(user_id: int) -> dict:
                 "organization_id", flat=True
             )
         )
-        org_rows = list(
-            Organization.objects.filter(pk__in=organization_ids).order_by("name", "id")
-        )
+        org_rows = list(Organization.objects.filter(pk__in=organization_ids).order_by("name", "id"))
         accessible_tournaments = (
             Tournament.objects.select_related("organization")
             .filter(Q(organization_id__in=organization_ids) | Q(pk__in=tournament_ids))
@@ -109,9 +107,7 @@ def get_me(user_id: int) -> dict:
             "status": match.status,
             "scheduled_at": match.scheduled_at,
         }
-        for match in matches_queryset.select_related("tournament").order_by(
-            "scheduled_at", "id"
-        )
+        for match in matches_queryset.select_related("tournament").order_by("scheduled_at", "id")
     ]
 
     return {

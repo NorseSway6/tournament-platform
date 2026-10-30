@@ -4,7 +4,9 @@ from django.db import models
 class ProtocolCorrectionAudit(models.Model):
     """Stores the reason and immutable event links for an organizer correction."""
 
-    match = models.ForeignKey("matches.Match", on_delete=models.PROTECT, related_name="correction_audits")
+    match = models.ForeignKey(
+        "matches.Match", on_delete=models.PROTECT, related_name="correction_audits"
+    )
     target_event = models.ForeignKey(
         "matches.MatchEvent", on_delete=models.PROTECT, related_name="correction_audits"
     )
@@ -12,7 +14,10 @@ class ProtocolCorrectionAudit(models.Model):
         "matches.MatchEvent", on_delete=models.PROTECT, related_name="correction_audit_void"
     )
     replacement_event = models.OneToOneField(
-        "matches.MatchEvent", null=True, blank=True, on_delete=models.PROTECT,
+        "matches.MatchEvent",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
         related_name="correction_audit_replacement",
     )
     organization = models.ForeignKey(

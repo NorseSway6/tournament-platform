@@ -1,0 +1,37 @@
+target-version = "py312"
+line-length = 100
+
+force-exclude = true
+extend-exclude = ["**/migrations/*"]
+
+[lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes: неиспользуемые импорты и переменные, неопределённые имена
+    "I",       # isort: порядок импортов
+    "B",       # bugbear: типичные ловушки
+    "UP",      # pyupgrade: современный синтаксис под target-version
+    "C4",      # упрощение comprehensions
+    "SIM",     # упрощение конструкций
+    "N",       # pep8-naming
+    "DJ",      # flake8-django
+    "DTZ",     # наивные datetime: важно при работе с часовыми поясами
+    "RUF",     # правила самого ruff
+]
+ignore = [
+    "E501",    # длину строк решает форматтер; длинные строки и docstring он не переносит
+    "RUF001",  # в коде и комментариях русский текст:
+    "RUF002",  # эти три правила принимают кириллицу за похожие латинские буквы
+    "RUF003",  # и срабатывают на каждом русском docstring
+    "DJ001",   # null=True у CharField сделан сознательно (уникальные email/phone)
+    "RUF012",  # дает шум на Django Meta и классах админки
+]
+
+[lint.isort]
+known-first-party = ["apps", "config"]
+
+[lint.flake8-bugbear]
+extend-immutable-calls = [
+    "ninja.Query", "ninja.Path", "ninja.Body", "ninja.Form",
+    "ninja.File", "ninja.Header", "ninja.Cookie",
+]

@@ -3,9 +3,9 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserCreationForm
 from django.core.exceptions import ValidationError
 
+from apps.identity_access.models import AdminUser, TokenSession, User
 from apps.matches.models import MatchOfficial
 from apps.organizations.models import OrganizationMember
-from apps.identity_access.models import AdminUser, TokenSession, User
 from apps.teams.models import Team
 from apps.tournaments.models import TournamentMember
 
@@ -70,13 +70,17 @@ def _user_role_summary(user: User):
     roles = []
     if user.is_superuser or user.is_platform_admin:
         roles.append("Admin")
-    if any(user.organization_memberships.all()) or any(
-        user.tournament_memberships.all()
-    ):
+    if any(
+        membership.role == OrganizationMember.Role.ORGANIZER
+        for membership in user.organization_memberships.all()
+    ) or any(user.tournament_memberships.all()):
         roles.append("Organizer")
     if any(user.captained_teams.all()):
         roles.append("Captain")
-    if any(user.match_official_assignments.all()):
+    if any(
+        membership.role == OrganizationMember.Role.REFEREE
+        for membership in user.organization_memberships.all()
+    ) or any(user.match_official_assignments.all()):
         roles.append("Judge")
     return ", ".join(roles) if roles else "—"
 
@@ -265,11 +269,10 @@ class TokenSessionAdmin(admin.ModelAdmin):
     list_filter = ("revoked_at",)
     search_fields = ("user__username",)
     readonly_fields = (
-        "id", "user", "refresh_token_hash", "expires_at", "revoked_at", "created_at"
+        "id",
+        "user",
+        "refresh_token_hash",
+        "expires_at",
+        "revoked_at",
+        "created_at",
     )
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False

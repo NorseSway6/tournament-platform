@@ -34,6 +34,7 @@ from .public import (
     TournamentOut,
     TournamentStageSummary,
 )
+from .scorers import ScorerOut, ScorersOut
 from .standings import (
     GroupStandings,
     StageStandings,
@@ -73,6 +74,8 @@ __all__ = [
     "RoundPatchIn",
     "RoundSummary",
     "RoundWriteIn",
+    "ScorerOut",
+    "ScorersOut",
     "StageKind",
     "StagePatchIn",
     "StageStandings",

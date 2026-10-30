@@ -2,27 +2,29 @@ from django.http import HttpRequest
 from ninja import Router
 from ninja.errors import HttpError
 
-from config.api_errors import api_response
 from apps.identity_access.api.dependencies import access_token_auth, request_user_id
 from apps.teams.access import captain_auth
-from apps.tournaments.access import tournament_organizer_auth as organizer_auth
 from apps.teams.schemas.captain import (
     CaptainTeamCreateIn,
     CaptainTeamOut,
     CaptainTeamPatchIn,
     CaptainTeamsOut,
+    CaptainTransferIn,
     EntryPlayersOut,
     EntryPlayersReadOut,
     EntryPlayersUpdateIn,
+    TeamCaptainOut,
 )
 from apps.teams.schemas.common import PlayerOut, TeamOut
 from apps.teams.schemas.organizer import (
     EntryDecisionIn,
     EntryDecisionOut,
 )
+from apps.teams.selectors import public_player, public_team
 from apps.teams.services.captain import (
     create_captain_team,
     list_captain_teams,
+    transfer_captain_team,
     update_captain_team,
 )
 from apps.teams.services.entries import (
@@ -30,15 +32,12 @@ from apps.teams.services.entries import (
     update_captain_entry_players,
 )
 from apps.teams.services.organizer import decide_organizer_entry
-from apps.teams.selectors import public_player, public_team
+from apps.tournaments.access import tournament_organizer_auth as organizer_auth
+from config.api_errors import api_response
 
 router = Router(tags=["Teams and players"])
 captain_router = Router(tags=["Captain"], auth=captain_auth)
 organizer_router = Router(tags=["Organizer — entries"], auth=organizer_auth)
-
-
-
-
 
 
 @router.get("/teams/{team_id}", response=api_response(TeamOut))
@@ -67,6 +66,12 @@ def create_team(request: HttpRequest, payload: CaptainTeamCreateIn):
     return 201, team
 
 
+@captain_router.post("/teams/{team_id}/captain", response=api_response(TeamCaptainOut))
+def transfer_team_captain(request: HttpRequest, team_id: int, payload: CaptainTransferIn):
+    """Передаёт капитанство команды другому пользователю."""
+    return transfer_captain_team(request_user_id(request), team_id, payload.identifier)
+
+
 @captain_router.get("/me/teams", response=api_response(CaptainTeamsOut))
 def my_teams(request: HttpRequest):
     """Возвращает команды текущего капитана и их заявки на турниры."""
@@ -82,20 +87,14 @@ def patch_team(request: HttpRequest, team_id: int, payload: CaptainTeamPatchIn):
     )
 
 
-@captain_router.get(
-    "/entries/{entry_id}/players", response=api_response(EntryPlayersReadOut)
-)
+@captain_router.get("/entries/{entry_id}/players", response=api_response(EntryPlayersReadOut))
 def get_entry_players(request: HttpRequest, entry_id: int):
     """Возвращает ростер заявки капитана, включая удалённых игроков."""
     return get_captain_entry_players(request_user_id(request), entry_id)
 
 
-@captain_router.put(
-    "/entries/{entry_id}/players", response=api_response(EntryPlayersOut)
-)
-def put_entry_players(
-    request: HttpRequest, entry_id: int, payload: EntryPlayersUpdateIn
-):
+@captain_router.put("/entries/{entry_id}/players", response=api_response(EntryPlayersOut))
+def put_entry_players(request: HttpRequest, entry_id: int, payload: EntryPlayersUpdateIn):
     """Заменяет список игроков заявки капитана и их игровые номера."""
     return update_captain_entry_players(
         request_user_id(request),
@@ -104,22 +103,16 @@ def put_entry_players(
     )
 
 
-@organizer_router.patch(
-    "/entries/{entry_id}", response=api_response(EntryDecisionOut)
-)
-def organizer_entry_decision(
-    request: HttpRequest, entry_id: int, payload: EntryDecisionIn
-):
+@organizer_router.patch("/entries/{entry_id}", response=api_response(EntryDecisionOut))
+def organizer_entry_decision(request: HttpRequest, entry_id: int, payload: EntryDecisionIn):
     """Принимает или отклоняет ожидающую заявку турнира."""
-    from apps.tournaments.access import require_organizer_tournament
     from apps.teams.models import TournamentEntry
+    from apps.tournaments.access import require_organizer_tournament
 
-    tournament_id = TournamentEntry.objects.filter(pk=entry_id).values_list(
-        "tournament_id", flat=True
-    ).first()
+    tournament_id = (
+        TournamentEntry.objects.filter(pk=entry_id).values_list("tournament_id", flat=True).first()
+    )
     if tournament_id is None:
         raise HttpError(404, "Entry not found")
     require_organizer_tournament(request, tournament_id)
-    return decide_organizer_entry(
-        entry_id, payload.status, payload.decision_comment
-    )
+    return decide_organizer_entry(entry_id, payload.status, payload.decision_comment)

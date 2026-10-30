@@ -3,6 +3,7 @@ from datetime import date
 from ninja import Schema
 from pydantic import Field
 
+from apps.teams.schemas.common import CaptainSummary
 from apps.teams.schemas.types import EntryPlayerStatus, TournamentEntryStatus
 
 
@@ -18,6 +19,21 @@ class CaptainTeamPatchIn(Schema):
 
     name: str | None = Field(default=None, min_length=1, max_length=150)
     city: str | None = Field(default=None, max_length=100)
+
+
+class CaptainTransferIn(Schema):
+    """Новый капитан команды, выбранный по username или email."""
+
+    identifier: str = Field(min_length=1, max_length=254)
+
+
+class TeamCaptainOut(Schema):
+    """Команда после передачи капитанства."""
+
+    id: int
+    name: str
+    city: str
+    captain: CaptainSummary
 
 
 class CaptainTeamOut(Schema):

@@ -22,9 +22,7 @@ class Tournament(models.Model):
     slug = models.SlugField(max_length=64)
     name = models.CharField(max_length=200)
     season = models.CharField(max_length=50, blank=True)
-    status = models.CharField(
-        max_length=20, choices=Status.choices, default=Status.DRAFT
-    )
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     visibility = models.CharField(
         max_length=20,
         choices=Visibility.choices,
@@ -41,18 +39,14 @@ class Tournament(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(
-                fields=["status", "starts_on"], name="tournaments_status_start_idx"
-            )
+            models.Index(fields=["status", "starts_on"], name="tournaments_status_start_idx")
         ]
         constraints = [
             models.UniqueConstraint(
                 fields=["organization", "slug"], name="tournaments_org_slug_uq"
             ),
             models.CheckConstraint(
-                condition=Q(
-                    status__in=["draft", "registration", "ongoing", "finished"]
-                ),
+                condition=Q(status__in=["draft", "registration", "ongoing", "finished"]),
                 name="tournaments_status_valid_ck",
             ),
             models.CheckConstraint(

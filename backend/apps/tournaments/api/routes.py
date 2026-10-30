@@ -4,22 +4,23 @@ from django.http import HttpRequest
 from ninja import Query, Router
 from ninja.errors import HttpError
 
-from config.api_errors import api_response
+from apps.standings_stats.services import calculate_tournament_standings
 from apps.tournaments.access import (
-    tournament_organizer_auth as organizer_auth,
     require_organizer_group,
     require_organizer_organization_access,
     require_organizer_round,
     require_organizer_stage,
     require_organizer_tournament,
 )
-require_organizer_organization = require_organizer_organization_access
-from config.pagination import paginate
-from apps.standings_stats.services import calculate_tournament_standings
+from apps.tournaments.access import (
+    tournament_organizer_auth as organizer_auth,
+)
 from apps.tournaments.schemas.organizer import (
+    GroupEntriesReplaceIn,
     GroupPatchIn,
     GroupWriteIn,
     OrganizerEntriesOut,
+    OrganizerGroupEntriesOut,
     OrganizerGroupOut,
     OrganizerGroupsOut,
     OrganizerRoundOut,
@@ -40,8 +41,14 @@ from apps.tournaments.schemas.public import (
     TournamentListResponse,
     TournamentOut,
 )
+from apps.tournaments.schemas.scorers import ScorersOut
 from apps.tournaments.schemas.standings import StandingsOut
 from apps.tournaments.schemas.types import StageKind
+from apps.tournaments.selectors import (
+    get_public_tournament,
+    public_tournaments,
+    tournament_scorers,
+)
 from apps.tournaments.services.structure import (
     create_organizer_group,
     create_organizer_round,
@@ -49,9 +56,11 @@ from apps.tournaments.services.structure import (
     delete_organizer_group,
     delete_organizer_round,
     delete_organizer_stage,
+    list_organizer_group_entries,
     list_organizer_groups,
     list_organizer_rounds,
     list_organizer_stages,
+    replace_organizer_group_entries,
     update_organizer_group,
     update_organizer_round,
     update_organizer_stage,
@@ -59,16 +68,19 @@ from apps.tournaments.services.structure import (
 from apps.tournaments.services.tournaments import (
     create_organizer_tournament,
     delete_organizer_tournament,
+    finish_organizer_tournament,
     get_organizer_tournament,
     list_organizer_tournaments,
+    open_tournament_registration,
     organizer_entries,
     replace_organizer_regulation,
+    start_organizer_tournament,
     update_organizer_tournament,
 )
-from apps.tournaments.selectors import (
-    get_public_tournament,
-    public_tournaments,
-)
+from config.api_errors import api_response
+from config.pagination import paginate
+
+require_organizer_organization = require_organizer_organization_access
 
 router = Router(tags=["Tournaments"])
 organizer_router = Router(tags=["Organizer — tournaments"], auth=organizer_auth)
@@ -106,33 +118,33 @@ def tournament_standings(request: HttpRequest, tournament_id: int):
     return calculate_tournament_standings(tournament)
 
 
+@router.get("/{tournament_id}/scorers", response=api_response(ScorersOut))
+def tournament_scorers_list(request: HttpRequest, tournament_id: int):
+    """Возвращает бомбардиров публичного турнира по голам."""
+    tournament = get_public_tournament(tournament_id)
+    if tournament is None:
+        raise HttpError(404, "Tournament not found")
+    items = tournament_scorers(tournament.id)
+    return {"tournament_id": tournament.id, "items": items, "total": len(items)}
 
 
 @organizer_router.get("/tournaments", response=api_response(OrganizerTournamentListOut))
-def organizer_tournament_list(
-    request: HttpRequest, organization_id: int = Query(..., ge=1)
-):
+def organizer_tournament_list(request: HttpRequest, organization_id: int = Query(..., ge=1)):
     """Возвращает турниры для указанной организации"""
     require_organizer_organization_access(request, organization_id)
     items = list_organizer_tournaments(organization_id, request.auth.pk)
     return {"items": items, "total": len(items)}
 
 
-@organizer_router.post(
-    "/tournaments", response=api_response({201: OrganizerTournamentOut})
-)
-def organizer_tournament_create(
-    request: HttpRequest, payload: OrganizerTournamentWriteIn
-):
+@organizer_router.post("/tournaments", response=api_response({201: OrganizerTournamentOut}))
+def organizer_tournament_create(request: HttpRequest, payload: OrganizerTournamentWriteIn):
     """Создает турнир в рамках указанной организации"""
     require_organizer_organization(request, payload.organization_id)
     tournament = create_organizer_tournament(payload.model_dump())
     return 201, tournament
 
 
-@organizer_router.get(
-    "/tournaments/{tournament_id}", response=api_response(OrganizerTournamentOut)
-)
+@organizer_router.get("/tournaments/{tournament_id}", response=api_response(OrganizerTournamentOut))
 def organizer_tournament_detail(request: HttpRequest, tournament_id: int):
     """Возвращает один турнир"""
     require_organizer_tournament(request, tournament_id)
@@ -148,14 +160,10 @@ def organizer_tournament_patch(
 ):
     """Частично обновляет редактируемые поля турнира."""
     require_organizer_tournament(request, tournament_id)
-    return update_organizer_tournament(
-        tournament_id, payload.model_dump(exclude_unset=True)
-    )
+    return update_organizer_tournament(tournament_id, payload.model_dump(exclude_unset=True))
 
 
-@organizer_router.delete(
-    "/tournaments/{tournament_id}", response=api_response({204: None})
-)
+@organizer_router.delete("/tournaments/{tournament_id}", response=api_response({204: None}))
 def organizer_tournament_delete(request: HttpRequest, tournament_id: int):
     """Удаляет турнир, если для него ещё нет заявок и матчей."""
     require_organizer_tournament(request, tournament_id)
@@ -163,14 +171,42 @@ def organizer_tournament_delete(request: HttpRequest, tournament_id: int):
     return 204, None
 
 
+@organizer_router.post(
+    "/tournaments/{tournament_id}/open-registration",
+    response=api_response(OrganizerTournamentOut),
+)
+def organizer_tournament_open_registration(request: HttpRequest, tournament_id: int):
+    """Переводит черновик турнира в приём заявок."""
+    require_organizer_tournament(request, tournament_id)
+    return open_tournament_registration(tournament_id)
+
+
+@organizer_router.post(
+    "/tournaments/{tournament_id}/start",
+    response=api_response(OrganizerTournamentOut),
+)
+def organizer_tournament_start(request: HttpRequest, tournament_id: int):
+    """Начинает турнир и замораживает его регламент."""
+    require_organizer_tournament(request, tournament_id)
+    return start_organizer_tournament(tournament_id)
+
+
+@organizer_router.post(
+    "/tournaments/{tournament_id}/finish",
+    response=api_response(OrganizerTournamentOut),
+)
+def organizer_tournament_finish(request: HttpRequest, tournament_id: int):
+    """Завершает турнир, находящийся в стадии проведения."""
+    require_organizer_tournament(request, tournament_id)
+    return finish_organizer_tournament(tournament_id)
+
+
 @organizer_router.put(
     "/tournaments/{tournament_id}/regulation",
     response=api_response(OrganizerTournamentOut),
 )
-def organizer_regulation_replace(
-    request: HttpRequest, tournament_id: int, payload: RegulationIn
-):
-    """Целиком заменяет регламент турнира и проверяет правила таблицы."""
+def organizer_regulation_replace(request: HttpRequest, tournament_id: int, payload: RegulationIn):
+    """Целиком заменяет регламент турнира до его старта."""
     require_organizer_tournament(request, tournament_id)
     return replace_organizer_regulation(tournament_id, payload.regulation)
 
@@ -200,9 +236,7 @@ def organizer_stages_list(request: HttpRequest, tournament_id: int):
     "/tournaments/{tournament_id}/stages",
     response=api_response({201: OrganizerStageOut}),
 )
-def organizer_stage_create(
-    request: HttpRequest, tournament_id: int, payload: StageWriteIn
-):
+def organizer_stage_create(request: HttpRequest, tournament_id: int, payload: StageWriteIn):
     """Создаёт этап турнира."""
     require_organizer_tournament(request, tournament_id)
     stage = create_organizer_stage(tournament_id, payload.model_dump())
@@ -271,6 +305,30 @@ def organizer_group_delete(request: HttpRequest, group_id: int):
     require_organizer_group(request, group_id)
     delete_organizer_group(group_id)
     return 204, None
+
+
+@organizer_router.get(
+    "/groups/{group_id}/entries",
+    response=api_response(OrganizerGroupEntriesOut),
+)
+def organizer_group_entries_list(request: HttpRequest, group_id: int):
+    """Возвращает заявки, явно назначенные в группу."""
+    require_organizer_group(request, group_id)
+    items = list_organizer_group_entries(group_id)
+    return {"items": items, "total": len(items)}
+
+
+@organizer_router.put(
+    "/groups/{group_id}/entries",
+    response=api_response(OrganizerGroupEntriesOut),
+)
+def organizer_group_entries_replace(
+    request: HttpRequest, group_id: int, payload: GroupEntriesReplaceIn
+):
+    """Полностью заменяет список заявок, назначенных в группу."""
+    require_organizer_group(request, group_id)
+    items = replace_organizer_group_entries(group_id, payload.entry_ids)
+    return {"items": items, "total": len(items)}
 
 
 @organizer_router.get(

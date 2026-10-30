@@ -6,8 +6,8 @@ from apps.teams.models.player import Player
 from apps.teams.models.team import Team
 from apps.tournaments.models.tournament import Tournament
 
-class TournamentEntry(models.Model):
 
+class TournamentEntry(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         ACCEPTED = "accepted", "Accepted"
@@ -16,14 +16,20 @@ class TournamentEntry(models.Model):
 
     tournament = models.ForeignKey(Tournament, on_delete=models.PROTECT, related_name="entries")
     team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name="entries")
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True
+    )
     submitted_at = models.DateTimeField(default=timezone.now, editable=False)
     decision_comment = models.TextField(blank=True)
 
     class Meta:
-        indexes = [models.Index(fields=["tournament", "status"], name="entries_tournament_status_idx")]
+        indexes = [
+            models.Index(fields=["tournament", "status"], name="entries_tournament_status_idx")
+        ]
         constraints = [
-            models.UniqueConstraint(fields=["tournament", "team"], name="entries_tournament_team_uq"),
+            models.UniqueConstraint(
+                fields=["tournament", "team"], name="entries_tournament_team_uq"
+            ),
             models.CheckConstraint(
                 condition=Q(status__in=["pending", "accepted", "rejected", "withdrawn"]),
                 name="entries_status_valid_ck",
@@ -41,6 +47,13 @@ class EntryPlayer(models.Model):
         REMOVED = "removed", "Removed"
 
     entry = models.ForeignKey(TournamentEntry, on_delete=models.PROTECT, related_name="players")
+    tournament = models.ForeignKey(
+        Tournament,
+        null=True,
+        on_delete=models.PROTECT,
+        related_name="entry_players",
+        editable=False,
+    )
     player = models.ForeignKey(Player, on_delete=models.PROTECT, related_name="entry_memberships")
     number = models.PositiveSmallIntegerField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
@@ -49,9 +62,18 @@ class EntryPlayer(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["entry", "player"], name="entries_player_uq"),
             models.UniqueConstraint(
-                fields=["entry", "number"], condition=Q(status="active"), name="entries_active_number_uq"
+                fields=["tournament", "player"],
+                condition=Q(status="active"),
+                name="entries_tournament_player_uq",
             ),
-            models.CheckConstraint(condition=Q(number__gte=1, number__lte=99), name="entries_number_range_ck"),
+            models.UniqueConstraint(
+                fields=["entry", "number"],
+                condition=Q(status="active"),
+                name="entries_active_number_uq",
+            ),
+            models.CheckConstraint(
+                condition=Q(number__gte=1, number__lte=99), name="entries_number_range_ck"
+            ),
             models.CheckConstraint(
                 condition=Q(status__in=["active", "removed"]),
                 name="entries_player_status_ck",
@@ -61,3 +83,12 @@ class EntryPlayer(models.Model):
     def __str__(self) -> str:
         """Показывает игрока и его игровой номер."""
         return f"{self.player} #{self.number}"
+
+    def save(self, *args, **kwargs):
+        """Держит турнир записи в соответствии с турниром заявки."""
+        if self.entry_id and self.tournament_id != self.entry.tournament_id:
+            self.tournament_id = self.entry.tournament_id
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = {*update_fields, "tournament"}
+        super().save(*args, **kwargs)

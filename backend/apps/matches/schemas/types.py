@@ -1,18 +1,36 @@
 from typing import Literal
 
-
 MatchStatus = Literal[
-    "scheduled", "lineups_open", "live", "finished", "confirmed",
-    "postponed", "cancelled", "technical",
+    "scheduled",
+    "lineups_open",
+    "live",
+    "finished",
+    "confirmed",
+    "postponed",
+    "cancelled",
+    "technical",
 ]
 
 
 MatchResultType = Literal["played", "tech_win_home", "tech_win_away", "walkover"]
 
+TechnicalResultType = Literal["tech_win_home", "tech_win_away", "walkover"]
+
 
 MatchEventType = Literal[
-    "goal", "own_goal", "yellow", "red", "sub", "period_start",
-    "period_end", "pause", "resume", "finish", "void", "review_ok", "note",
+    "goal",
+    "own_goal",
+    "yellow",
+    "red",
+    "sub",
+    "period_start",
+    "period_end",
+    "pause",
+    "resume",
+    "finish",
+    "void",
+    "review_ok",
+    "note",
 ]
 
 
@@ -32,8 +50,12 @@ EntryStatus = Literal["pending", "accepted", "rejected", "withdrawn"]
 
 
 EventPeriod = Literal[
-    "first_half", "half_time", "second_half", "extra_time_first",
-    "extra_time_second", "penalties",
+    "first_half",
+    "half_time",
+    "second_half",
+    "extra_time_first",
+    "extra_time_second",
+    "penalties",
 ]
 
 

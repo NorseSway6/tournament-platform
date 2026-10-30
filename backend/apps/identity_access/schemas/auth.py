@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 
 from ninja import Schema
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class AuthRegisterIn(Schema):
@@ -17,6 +17,14 @@ class AuthRegisterIn(Schema):
     display_name: str = Field(default="", max_length=150)
     first_name: str = Field(default="", max_length=150)
     last_name: str = Field(default="", max_length=150)
+
+    @field_validator("username")
+    @classmethod
+    def username_must_not_contain_at(cls, value: str) -> str:
+        """Запрещает @ в username, чтобы вход не путал его с email."""
+        if "@" in value:
+            raise ValueError("Username cannot contain @.")
+        return value
 
 
 class UserOut(Schema):

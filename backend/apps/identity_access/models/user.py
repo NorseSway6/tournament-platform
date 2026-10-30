@@ -1,4 +1,5 @@
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import Q
@@ -33,9 +34,11 @@ class User(AbstractUser):
 
     def __str__(self) -> str:
         return (
-            self.display_name
-            or self.get_full_name()
-            or self.phone
-            or self.email
-            or self.username
+            self.display_name or self.get_full_name() or self.phone or self.email or self.username
         )
+
+    def clean(self) -> None:
+        """Не позволяет использовать @ в username, чтобы не путать его с email."""
+        super().clean()
+        if "@" in self.username:
+            raise ValidationError({"username": "Username cannot contain @."})

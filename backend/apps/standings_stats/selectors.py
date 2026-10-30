@@ -18,11 +18,11 @@ def accepted_entries(tournament: Tournament) -> QuerySet[TournamentEntry]:
 
 
 def completed_stage_matches(tournament: Tournament) -> QuerySet[Match]:
-    """Выбирает подтверждённые матчи с результатом для расчёта таблиц"""
+    """Выбирает подтверждённые и технические матчи с результатом для таблиц"""
     return (
         Match.objects.filter(
             tournament=tournament,
-            status=Match.Status.CONFIRMED,
+            status__in=(Match.Status.CONFIRMED, Match.Status.TECHNICAL),
             home_entry__status=TournamentEntry.Status.ACCEPTED,
             away_entry__status=TournamentEntry.Status.ACCEPTED,
             home_score__isnull=False,

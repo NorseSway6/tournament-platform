@@ -4,11 +4,24 @@ ifneq (,$(wildcard $(ENV_FILE)))
     export
 endif
 
-.PHONY: piplock makemigrations migrate createsuperuser up down
+.PHONY: piplock makemigrations migrate createsuperuser up down \
+	lint lint-fix format format-check
 
 piplock:
 	pipenv install
 	sudo chown -R $(USER) Pipfile.lock
+
+lint:
+	$(RUN) ruff check .
+
+lint-fix:
+	$(RUN) ruff check . --fix
+
+format:
+	$(RUN) ruff format .
+
+format-check:
+	$(RUN) ruff format --check .
 
 makemigrations:
 	docker compose exec -T backend python manage.py makemigrations

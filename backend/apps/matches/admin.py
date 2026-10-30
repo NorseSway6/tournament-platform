@@ -186,6 +186,4 @@ class ProtocolCorrectionAuditAdmin(admin.ModelAdmin):
     )
     list_filter = ("organization", "created_at")
     search_fields = ("reason", "actor_reference", "match__id")
-    readonly_fields = tuple(
-        field.name for field in ProtocolCorrectionAudit._meta.fields
-    )
+    readonly_fields = tuple(field.name for field in ProtocolCorrectionAudit._meta.fields)

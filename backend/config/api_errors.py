@@ -6,8 +6,7 @@ from django.http import Http404, HttpRequest, HttpResponse
 from ninja import Schema
 from ninja.errors import AuthenticationError, HttpError, ValidationError
 
-from config.domain_errors import DomainError
-
+from config.domain_errors import DomainError, error_code_for_status
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +27,10 @@ class ErrorOut(Schema):
     problems: list[ErrorProblem] | None = None
 
 
-class ApiHttpError(HttpError):
-    """HTTP error carrying field-level details through the shared handler."""
-
-    def __init__(self, status_code: int, message: str, problems=None):
-        super().__init__(status_code, message)
-        self.problems = problems
-
-
 def django_validation_problems(
     error: DjangoValidationError, location: tuple[str | int, ...] = ("body",)
 ) -> list[dict]:
-    """Flattens Django model validation into the public ErrorOut problems shape."""
+    """Приводит результаты валидации модели Django к стандартному формату ошибок ErrorOut."""
     if hasattr(error, "error_dict"):
         field_errors = error.error_dict.items()
     else:
@@ -58,26 +49,22 @@ def django_validation_problems(
     return problems
 
 
-def handle_domain_error(
-    request: HttpRequest, error: DomainError, *, api: Any
-) -> HttpResponse:
+def handle_domain_error(request: HttpRequest, error: DomainError, *, api: Any) -> HttpResponse:
     """Преобразует ожидаемую ошибку бизнес-операции в единый ErrorOut."""
-    problems = getattr(error, "problems", None)
-    validation_error = getattr(error, "validation_error", None)
-    if problems is None and validation_error is not None:
+    problems = error.problems
+    if problems is None and error.validation_error is not None:
         problems = django_validation_problems(
-            validation_error,
-            tuple(getattr(error, "validation_location", ("body",))),
+            error.validation_error,
+            error.validation_location,
         )
-    status = error.status_code
     return api.create_response(
         request,
         {
-            "code": _error_code(status),
+            "code": error.code,
             "message": str(error),
             "problems": problems,
         },
-        status=status,
+        status=error.status_code,
     )
 
 
@@ -100,27 +87,13 @@ def api_response(success: Any) -> Any:
     return {**ERROR_RESPONSES, **responses}
 
 
-def _error_code(status: int) -> str:
-    """Возвращает стабильный machine-readable код для HTTP-статуса."""
-    return {
-        400: "bad_request",
-        401: "unauthorized",
-        403: "forbidden",
-        404: "not_found",
-        409: "conflict",
-        422: "validation_error",
-        423: "resource_locked",
-        503: "service_unavailable",
-    }.get(status, "http_error")
-
-
 def handle_http_error(request: HttpRequest, error: HttpError, *, api: Any) -> HttpResponse:
     """Возвращает единый JSON-ответ для явных HTTP-ошибок Ninja."""
     status = error.status_code
     return api.create_response(
         request,
         {
-            "code": _error_code(status),
+            "code": error_code_for_status(status),
             "message": str(error),
             "problems": getattr(error, "problems", None),
         },
@@ -131,7 +104,7 @@ def handle_http_error(request: HttpRequest, error: HttpError, *, api: Any) -> Ht
 def handle_authentication_error(
     request: HttpRequest, error: AuthenticationError, *, api: Any
 ) -> HttpResponse:
-    """Formats Django Ninja's missing/invalid-auth response as the API contract."""
+    """Форматирует ответ Django Ninja в случае отсутствия или недействительности аутентификационных данных в соответствии с API."""
     return api.create_response(
         request,
         {
@@ -144,7 +117,7 @@ def handle_authentication_error(
 
 
 def handle_not_found(request: HttpRequest, error: Http404, *, api: Any) -> HttpResponse:
-    """Преобразует Django Http404 в общий API-контракт ошибки."""
+    """Преобразует Django Http404 в общий API ошибки."""
     return api.create_response(
         request,
         {"code": "not_found", "message": "Resource not found", "problems": None},
@@ -175,9 +148,7 @@ def handle_validation_error(
     )
 
 
-def handle_unexpected_error(
-    request: HttpRequest, error: Exception, *, api: Any
-) -> HttpResponse:
+def handle_unexpected_error(request: HttpRequest, error: Exception, *, api: Any) -> HttpResponse:
     """Логирует непредвиденную ошибку и не раскрывает внутренности клиенту."""
     logger.exception("Unhandled API exception", exc_info=error)
     return api.create_response(

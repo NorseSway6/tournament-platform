@@ -2,8 +2,7 @@ from django.db import transaction
 
 from apps.teams.models import TournamentEntry
 from apps.tournaments.models import Tournament
-
-from config.domain_errors import DomainError
+from config.domain_errors import ConflictError, DomainValidationError, NotFoundError
 
 
 def decide_organizer_entry(
@@ -11,7 +10,7 @@ def decide_organizer_entry(
 ) -> TournamentEntry:
     """Applies an organizer's decision to a pending tournament entry."""
     if status not in (TournamentEntry.Status.ACCEPTED, TournamentEntry.Status.REJECTED):
-        raise DomainError("Entry decision must be accepted or rejected", 422)
+        raise DomainValidationError("Entry decision must be accepted or rejected")
     with transaction.atomic():
         entry = (
             TournamentEntry.objects.select_for_update()
@@ -22,21 +21,19 @@ def decide_organizer_entry(
         if entry is None:
             exists = TournamentEntry.objects.filter(pk=entry_id).exists()
             if not exists:
-                raise DomainError("Entry not found", 404)
+                raise NotFoundError("Entry not found")
         if entry.status == status:
             return entry
         if entry.status != TournamentEntry.Status.PENDING:
-            raise DomainError("Only pending entries can be decided", 409)
+            raise ConflictError("Only pending entries can be decided", code="entry_not_pending")
         if entry.tournament.status not in (
             Tournament.Status.REGISTRATION,
             Tournament.Status.ONGOING,
         ):
-            raise DomainError(
-                "Entries cannot be decided for this tournament", 409
+            raise ConflictError(
+                "Entries cannot be decided for this tournament", code="entry_decision_closed"
             )
         entry.status = status
         entry.decision_comment = decision_comment.strip()
         entry.save(update_fields=["status", "decision_comment"])
         return entry
-
-

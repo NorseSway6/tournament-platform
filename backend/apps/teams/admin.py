@@ -29,10 +29,17 @@ class TeamAdmin(admin.ModelAdmin):
 
 @admin.register(Player)
 class PlayerAdmin(admin.ModelAdmin):
-    list_display = ("last_name", "first_name", "middle_name", "birth_date", "user")
-    search_fields = ("last_name", "first_name", "middle_name", "user__username", "user__phone")
-    autocomplete_fields = ("user",)
-    list_select_related = ("user",)
+    list_display = ("last_name", "first_name", "middle_name", "birth_date", "user", "created_by")
+    search_fields = (
+        "last_name",
+        "first_name",
+        "middle_name",
+        "user__username",
+        "user__phone",
+        "created_by__username",
+    )
+    autocomplete_fields = ("user", "created_by")
+    list_select_related = ("user", "created_by")
 
 
 @admin.register(TournamentEntry)
@@ -47,8 +54,13 @@ class TournamentEntryAdmin(admin.ModelAdmin):
 
 @admin.register(EntryPlayer)
 class EntryPlayerAdmin(admin.ModelAdmin):
-    list_display = ("player", "entry", "number", "status")
-    list_filter = ("status", "entry__tournament")
-    search_fields = ("player__last_name", "player__first_name", "entry__team__name", "entry__tournament__name")
-    autocomplete_fields = ("entry", "player")
-    list_select_related = ("player", "entry", "entry__team", "entry__tournament")
+    list_display = ("player", "entry", "tournament", "number", "status")
+    list_filter = ("status", "tournament")
+    search_fields = (
+        "player__last_name",
+        "player__first_name",
+        "entry__team__name",
+        "tournament__name",
+    )
+    autocomplete_fields = ("entry", "player", "tournament")
+    list_select_related = ("player", "entry", "entry__team", "tournament")

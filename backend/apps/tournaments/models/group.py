@@ -1,5 +1,5 @@
-from django.db import models
 from django.core.exceptions import ValidationError
+from django.db import models
 
 from apps.tournaments.models.stage import Stage
 
@@ -16,7 +16,9 @@ class Group(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["stage", "ord"], name="tournaments_group_ord_uq"),
             models.UniqueConstraint(fields=["stage", "name"], name="tournaments_group_name_uq"),
-            models.CheckConstraint(condition=models.Q(ord__gte=1), name="tournaments_group_ord_positive_ck"),
+            models.CheckConstraint(
+                condition=models.Q(ord__gte=1), name="tournaments_group_ord_positive_ck"
+            ),
         ]
 
     def clean(self) -> None:

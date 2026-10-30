@@ -8,7 +8,6 @@ from apps.matches.schemas.common import (
     GroupSummary,
     MatchStageSummary,
     RoundSummary,
-    TeamSummary,
     TournamentSummary,
     VenueSummary,
 )
@@ -63,6 +62,7 @@ class TodayOut(Schema):
     """Матчи на выбранную дату для публичного раздела «Сегодня»."""
 
     date: date
+    timezone: str | None
     items: list[MatchOut]
     total: int
 
@@ -71,6 +71,7 @@ class JudgeMatchesOut(Schema):
     """Матчи текущего судьи за выбранную дату."""
 
     date: date
+    timezone: str | None
     items: list[MatchOut]
     total: int
 

@@ -1,6 +1,5 @@
 from typing import Literal
 
-
 TournamentEntryStatus = Literal["pending", "accepted", "rejected", "withdrawn"]
 
 

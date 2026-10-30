@@ -12,9 +12,12 @@ def is_platform_admin(user) -> bool:
 
 def _has_organization_role(request: HttpRequest, user) -> bool:
     """Checks whether the user has at least one organization scope."""
-    return is_platform_admin(user) or OrganizationMember.objects.filter(
-        user=user, role=OrganizationMember.Role.ORGANIZER
-    ).exists()
+    return (
+        is_platform_admin(user)
+        or OrganizationMember.objects.filter(
+            user=user, role=OrganizationMember.Role.ORGANIZER
+        ).exists()
+    )
 
 
 organization_organizer_auth = AccessTokenAuth(
@@ -39,8 +42,6 @@ def require_organizer_organization(request: HttpRequest, organization_id: int) -
     raise HttpError(403, "Organizer access to this organization is required")
 
 
-def require_organizer_organization_access(
-    request: HttpRequest, organization_id: int
-) -> None:
+def require_organizer_organization_access(request: HttpRequest, organization_id: int) -> None:
     """Checks that the caller has a direct organizer membership in an organization."""
     require_organizer_organization(request, organization_id)

@@ -1,11 +1,13 @@
-from datetime import date
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.db.models import Exists, F, Max, OuterRef, Prefetch, Q, QuerySet
+from django.utils import timezone as django_timezone
 
 from apps.matches.models import Match, MatchEvent
+from apps.teams.models import TournamentEntry
 from apps.tournaments.models import Tournament
 from apps.tournaments.selectors import PUBLIC_STATUSES
-from apps.teams.models import TournamentEntry
 
 
 def public_matches(
@@ -25,23 +27,15 @@ def public_matches(
         tournament__status__in=PUBLIC_STATUSES,
         tournament__visibility=Tournament.Visibility.PUBLIC,
     ).filter(
-        (
-            Q(home_entry__isnull=True)
-            | Q(home_entry__status=TournamentEntry.Status.ACCEPTED)
-        )
-        & (
-            Q(away_entry__isnull=True)
-            | Q(away_entry__status=TournamentEntry.Status.ACCEPTED)
-        )
+        (Q(home_entry__isnull=True) | Q(home_entry__status=TournamentEntry.Status.ACCEPTED))
+        & (Q(away_entry__isnull=True) | Q(away_entry__status=TournamentEntry.Status.ACCEPTED))
     )
     if tournament_id is not None:
         queryset = queryset.filter(tournament_id=tournament_id)
     if status is not None:
         queryset = queryset.filter(status=status)
     if team_id is not None:
-        queryset = queryset.filter(
-            Q(home_entry__team_id=team_id) | Q(away_entry__team_id=team_id)
-        )
+        queryset = queryset.filter(Q(home_entry__team_id=team_id) | Q(away_entry__team_id=team_id))
     if stage_id is not None:
         queryset = queryset.filter(stage_id=stage_id)
     if round_id is not None:
@@ -72,12 +66,15 @@ def public_matches(
 def get_public_match(match_id: int) -> Match | None:
     """Ищет публичный матч и заранее загружает его ленту событий"""
     voids = MatchEvent.objects.filter(
-        match_id=OuterRef("match_id"), type=MatchEvent.Type.VOID,
+        match_id=OuterRef("match_id"),
+        type=MatchEvent.Type.VOID,
         target_event_id=OuterRef("pk"),
     )
-    events = MatchEvent.objects.annotate(voided=Exists(voids)).select_related(
-        "player__player", "related_player__player"
-    ).order_by("seq")
+    events = (
+        MatchEvent.objects.annotate(voided=Exists(voids))
+        .select_related("player__player", "related_player__player")
+        .order_by("seq")
+    )
     return (
         public_matches()
         .filter(pk=match_id)
@@ -92,42 +89,137 @@ def get_match(match_id: int) -> Match | None:
 
 
 def get_match_event_feed(match_id: int, after_seq: int) -> dict | None:
-    """Возвращает события после sequence и последний номер события матча."""
-    match = Match.objects.filter(pk=match_id).only("id").first()
+    """Возвращает события публичного матча после sequence и последний номер."""
+    match = public_matches().filter(pk=match_id).first()
     if match is None:
         return None
     events = MatchEvent.objects.filter(match_id=match_id)
     last_seq = events.aggregate(last_seq=Max("seq"))["last_seq"] or 0
     voids = MatchEvent.objects.filter(
-        match_id=OuterRef("match_id"), type=MatchEvent.Type.VOID,
+        match_id=OuterRef("match_id"),
+        type=MatchEvent.Type.VOID,
         target_event_id=OuterRef("pk"),
     )
-    items = events.filter(seq__gt=after_seq).annotate(voided=Exists(voids)).select_related(
-        "player__player", "related_player__player"
-    ).order_by("seq")
+    items = (
+        events.filter(seq__gt=after_seq)
+        .annotate(voided=Exists(voids))
+        .select_related("player__player", "related_player__player")
+        .order_by("seq")
+    )
     return {"match_id": match_id, "after_seq": after_seq, "last_seq": last_seq, "items": items}
 
 
-def matches_for_date(match_date: date, match_ids: set[int] | None = None) -> QuerySet[Match]:
-    """Возвращает матчи указанного дня, при необходимости по заданным ID."""
-    queryset = Match.objects.filter(scheduled_at__date=match_date)
+UTC = ZoneInfo("UTC")
+
+_MATCH_LIST_RELATED = (
+    "tournament__organization",
+    "stage",
+    "round",
+    "group",
+    "venue",
+    "home_entry__team",
+    "away_entry__team",
+)
+
+
+def parse_timezone_name(name: str | None) -> ZoneInfo:
+    """Возвращает IANA-пояс или UTC, отклоняя неизвестные значения."""
+    if name is None:
+        return UTC
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError) as error:
+        raise ValueError("timezone must be a valid IANA timezone name") from error
+
+
+def local_day_bounds(day: date, tz: ZoneInfo) -> tuple[datetime, datetime]:
+    """Возвращает UTC-границы локального дня [начало, следующий день)."""
+    start = datetime.combine(day, time.min, tzinfo=tz)
+    end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=tz)
+    return start, end
+
+
+def public_matches_for_local_date(
+    match_date: date, timezone_name: str | None = None
+) -> QuerySet[Match]:
+    """Возвращает публичные матчи локального дня в указанном поясе (по умолчанию UTC)."""
+    tz = parse_timezone_name(timezone_name)
+    start, end = local_day_bounds(match_date, tz)
+    return public_matches().filter(scheduled_at__gte=start, scheduled_at__lt=end)
+
+
+def _match_list_queryset(match_ids: set[int] | None, captain_id: int | None) -> QuerySet[Match]:
+    """Собирает базовый queryset для списков матчей судьи и капитана."""
+    queryset = Match.objects.all()
     if match_ids is not None:
         queryset = queryset.filter(pk__in=match_ids)
-    return queryset.select_related(
-        "tournament__organization", "stage", "round", "group", "venue", "home_entry__team", "away_entry__team"
-    ).order_by("scheduled_at", "id")
+    if captain_id is not None:
+        queryset = queryset.filter(
+            Q(home_entry__team__captain_id=captain_id) | Q(away_entry__team__captain_id=captain_id)
+        )
+    return queryset.select_related(*_MATCH_LIST_RELATED).order_by("scheduled_at", "id")
 
 
-def matches_for_captain_date(match_date: date, captain_id: int) -> QuerySet[Match]:
+def _organization_timezone(name: str) -> ZoneInfo:
+    """Возвращает пояс организации, подменяя некорректное значение на UTC."""
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return UTC
+
+
+def _matches_for_organization_local_date(
+    queryset: QuerySet[Match], match_date: date | None
+) -> list[Match]:
+    """Фильтрует матчи по локальной дате их организации.
+
+    ``match_date=None`` означает «сегодня» в поясе каждой организации.
+    """
+    if match_date is None:
+        server_today = django_timezone.localdate()
+        window_start = datetime.combine(server_today - timedelta(days=1), time.min, tzinfo=UTC)
+        window_end = datetime.combine(server_today + timedelta(days=2), time.min, tzinfo=UTC)
+    else:
+        window_start = datetime.combine(match_date - timedelta(days=1), time.min, tzinfo=UTC)
+        window_end = datetime.combine(match_date + timedelta(days=2), time.min, tzinfo=UTC)
+    candidates = queryset.filter(scheduled_at__gte=window_start, scheduled_at__lt=window_end)
+    matches = []
+    for match in candidates:
+        tz = _organization_timezone(match.tournament.organization.timezone)
+        local_date = match.scheduled_at.astimezone(tz).date()
+        target_date = match_date or django_timezone.localdate(timezone=tz)
+        if local_date == target_date:
+            matches.append(match)
+    return matches
+
+
+def matches_for_date(
+    match_date: date | None,
+    match_ids: set[int] | None = None,
+    *,
+    timezone_name: str | None = None,
+) -> list[Match]:
+    """Возвращает матчи дня по общему поясу или по поясам организаций."""
+    queryset = _match_list_queryset(match_ids, None)
+    if timezone_name is None:
+        return _matches_for_organization_local_date(queryset, match_date)
+    tz = parse_timezone_name(timezone_name)
+    day = match_date or django_timezone.localdate(timezone=tz)
+    start, end = local_day_bounds(day, tz)
+    return list(queryset.filter(scheduled_at__gte=start, scheduled_at__lt=end))
+
+
+def matches_for_captain_date(
+    match_date: date | None,
+    captain_id: int,
+    *,
+    timezone_name: str | None = None,
+) -> list[Match]:
     """Возвращает матчи дня, в которых участвует команда указанного капитана."""
-    return (
-        Match.objects.filter(scheduled_at__date=match_date)
-        .filter(
-            Q(home_entry__team__captain_id=captain_id)
-            | Q(away_entry__team__captain_id=captain_id)
-        )
-        .select_related(
-            "tournament__organization", "stage", "round", "group", "venue", "home_entry__team", "away_entry__team"
-        )
-        .order_by("scheduled_at", "id")
-    )
+    queryset = _match_list_queryset(None, captain_id)
+    if timezone_name is None:
+        return _matches_for_organization_local_date(queryset, match_date)
+    tz = parse_timezone_name(timezone_name)
+    day = match_date or django_timezone.localdate(timezone=tz)
+    start, end = local_day_bounds(day, tz)
+    return list(queryset.filter(scheduled_at__gte=start, scheduled_at__lt=end))

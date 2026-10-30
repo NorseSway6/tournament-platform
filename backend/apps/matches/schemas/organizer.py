@@ -3,7 +3,12 @@ from datetime import datetime
 from ninja import Schema
 from pydantic import Field
 
-from apps.matches.schemas.types import MatchStatus, OfficialRole, StageKind
+from apps.matches.schemas.types import (
+    MatchResultType,
+    MatchStatus,
+    OfficialRole,
+    TechnicalResultType,
+)
 
 
 class VenueWriteIn(Schema):
@@ -72,6 +77,21 @@ class MatchSchedulePatchIn(Schema):
     venue_id: int | None = Field(default=None, ge=1)
 
 
+class MatchTechnicalResultIn(Schema):
+    """Технический результат матча и итоговый счёт."""
+
+    home_score: int = Field(ge=0)
+    away_score: int = Field(ge=0)
+    result_type: TechnicalResultType
+
+
+class MatchCloseLiveIn(Schema):
+    """Счёт для принудительного завершения зависшего live-матча."""
+
+    home_score: int = Field(ge=0)
+    away_score: int = Field(ge=0)
+
+
 class MatchOfficialIn(Schema):
     """Назначение одного официального лица на матч."""
 
@@ -115,5 +135,7 @@ class OrganizerMatchOut(Schema):
     scheduled_end: datetime | None
     duration_min: int
     status: MatchStatus
+    result_type: MatchResultType
     home_score: int | None
     away_score: int | None
+    finished_at: datetime | None

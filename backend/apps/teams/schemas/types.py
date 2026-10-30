@@ -1,6 +1,5 @@
 from typing import Literal
 
-
 TournamentStatus = Literal["draft", "registration", "ongoing", "finished"]
 
 

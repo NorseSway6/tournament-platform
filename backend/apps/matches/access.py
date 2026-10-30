@@ -24,11 +24,31 @@ def require_judge_match(request: HttpRequest, match_id: int) -> None:
     match = Match.objects.filter(pk=match_id).only("id").first()
     if match is None:
         raise HttpError(404, "Match not found")
-    if is_platform_admin(request.auth) or MatchOfficial.objects.filter(
-        match_id=match_id, official=request.auth
-    ).exists():
+    if (
+        is_platform_admin(request.auth)
+        or MatchOfficial.objects.filter(match_id=match_id, official=request.auth).exists()
+    ):
         return
     raise HttpError(403, "Judge assignment to this match is required")
+
+
+def require_lease_takeover(request: HttpRequest, match_id: int) -> None:
+    """Allows takeover only to the main referee or a tournament organizer."""
+    match = Match.objects.select_related("tournament").filter(pk=match_id).first()
+    if match is None:
+        raise HttpError(404, "Match not found")
+    if has_tournament_access(request.auth, match.tournament):
+        return
+    if MatchOfficial.objects.filter(
+        match_id=match_id,
+        official=request.auth,
+        role=MatchOfficial.Role.REFEREE,
+    ).exists():
+        return
+    raise HttpError(
+        403,
+        "Only the main referee or a tournament organizer can take over the lease",
+    )
 
 
 def require_organizer_match(request: HttpRequest, match_id: int) -> None:

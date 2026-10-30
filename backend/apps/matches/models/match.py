@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
@@ -25,20 +26,42 @@ class Match(models.Model):
         TECH_WIN_AWAY = "tech_win_away", "Away technical win"
         WALKOVER = "walkover", "Walkover"
 
-    tournament = models.ForeignKey("tournaments.Tournament", on_delete=models.PROTECT, related_name="matches")
+    tournament = models.ForeignKey(
+        "tournaments.Tournament", on_delete=models.PROTECT, related_name="matches"
+    )
     stage = models.ForeignKey("tournaments.Stage", on_delete=models.PROTECT, related_name="matches")
-    round = models.ForeignKey(TournamentRound, null=True, blank=True, on_delete=models.PROTECT, related_name="matches")
-    group = models.ForeignKey("tournaments.Group", null=True, blank=True, on_delete=models.PROTECT, related_name="matches")
-    home_entry = models.ForeignKey("teams.TournamentEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="home_matches")
-    away_entry = models.ForeignKey("teams.TournamentEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="away_matches")
+    round = models.ForeignKey(
+        TournamentRound, null=True, blank=True, on_delete=models.PROTECT, related_name="matches"
+    )
+    group = models.ForeignKey(
+        "tournaments.Group", null=True, blank=True, on_delete=models.PROTECT, related_name="matches"
+    )
+    home_entry = models.ForeignKey(
+        "teams.TournamentEntry",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="home_matches",
+    )
+    away_entry = models.ForeignKey(
+        "teams.TournamentEntry",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="away_matches",
+    )
 
-    venue = models.ForeignKey("matches.Venue", null=True, blank=True, on_delete=models.SET_NULL, related_name="matches")
+    venue = models.ForeignKey(
+        "matches.Venue", null=True, blank=True, on_delete=models.SET_NULL, related_name="matches"
+    )
     scheduled_at = models.DateTimeField(null=True, blank=True)
     duration_min = models.PositiveSmallIntegerField(default=60)
     scheduled_end = models.DateTimeField(null=True, blank=True, editable=False)
 
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.SCHEDULED)
-    result_type = models.CharField(max_length=20, choices=ResultType.choices, default=ResultType.PLAYED)
+    result_type = models.CharField(
+        max_length=20, choices=ResultType.choices, default=ResultType.PLAYED
+    )
 
     home_score = models.PositiveSmallIntegerField(null=True, blank=True)
     away_score = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -47,6 +70,16 @@ class Match(models.Model):
     finished_at = models.DateTimeField(null=True, blank=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
 
+    lease_token = models.UUIDField(null=True, blank=True)
+    lease_judge = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="leased_matches",
+    )
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         indexes = [
             models.Index(fields=["tournament", "scheduled_at"], name="matches_tourn_sched_idx"),
@@ -54,10 +87,14 @@ class Match(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                condition=Q(home_entry__isnull=True) | Q(away_entry__isnull=True) | ~Q(home_entry=F("away_entry")),
+                condition=Q(home_entry__isnull=True)
+                | Q(away_entry__isnull=True)
+                | ~Q(home_entry=F("away_entry")),
                 name="matches_distinct_teams_ck",
             ),
-            models.CheckConstraint(condition=Q(duration_min__gte=1), name="matches_duration_positive_ck"),
+            models.CheckConstraint(
+                condition=Q(duration_min__gte=1), name="matches_duration_positive_ck"
+            ),
             models.CheckConstraint(
                 condition=(Q(scheduled_at__isnull=True) & Q(scheduled_end__isnull=True))
                 | (Q(scheduled_at__isnull=False) & Q(scheduled_end__gt=F("scheduled_at"))),
@@ -74,11 +111,24 @@ class Match(models.Model):
                 name="matches_result_status_has_score_ck",
             ),
             models.CheckConstraint(
-                condition=Q(status__in=["scheduled", "lineups_open", "live", "finished", "confirmed", "postponed", "cancelled", "technical"]),
+                condition=Q(
+                    status__in=[
+                        "scheduled",
+                        "lineups_open",
+                        "live",
+                        "finished",
+                        "confirmed",
+                        "postponed",
+                        "cancelled",
+                        "technical",
+                    ]
+                ),
                 name="matches_status_valid_ck",
             ),
             models.CheckConstraint(
-                condition=Q(result_type__in=["played", "tech_win_home", "tech_win_away", "walkover"]),
+                condition=Q(
+                    result_type__in=["played", "tech_win_home", "tech_win_away", "walkover"]
+                ),
                 name="matches_result_type_valid_ck",
             ),
         ]

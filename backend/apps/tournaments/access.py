@@ -14,9 +14,7 @@ def _has_tournament_organizer_role(request: HttpRequest, user) -> bool:
         or OrganizationMember.objects.filter(
             user=user, role=OrganizationMember.Role.ORGANIZER
         ).exists()
-        or TournamentMember.objects.filter(
-            user=user, role=TournamentMember.Role.ORGANIZER
-        ).exists()
+        or TournamentMember.objects.filter(user=user, role=TournamentMember.Role.ORGANIZER).exists()
     )
 
 
@@ -43,19 +41,20 @@ def has_tournament_access(user, tournament: Tournament) -> bool:
     )
 
 
-def require_organizer_organization_access(
-    request: HttpRequest, organization_id: int
-) -> None:
+def require_organizer_organization_access(request: HttpRequest, organization_id: int) -> None:
     """Checks an organization scope before listing or creating its tournaments."""
     from apps.organizations.models import Organization
 
     if not Organization.objects.filter(pk=organization_id).exists():
         raise HttpError(404, "Organization not found")
-    if is_platform_admin(request.auth) or OrganizationMember.objects.filter(
-        user=request.auth,
-        organization_id=organization_id,
-        role=OrganizationMember.Role.ORGANIZER,
-    ).exists():
+    if (
+        is_platform_admin(request.auth)
+        or OrganizationMember.objects.filter(
+            user=request.auth,
+            organization_id=organization_id,
+            role=OrganizationMember.Role.ORGANIZER,
+        ).exists()
+    ):
         return
     raise HttpError(403, "Organizer access to this organization is required")
 

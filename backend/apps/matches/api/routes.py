@@ -1,26 +1,22 @@
-from datetime import date as Date
+from datetime import date as date_type
+
 from django.http import HttpRequest
-from django.utils import timezone
+from django.utils import timezone as django_timezone
 from ninja import Query, Router
 from ninja.errors import HttpError
 
-from config.api_errors import api_response
-from config.pagination import paginate
-from apps.identity_access.api.dependencies import request_user_id
+from apps.identity_access.api.dependencies import access_token_auth, request_user_id
 from apps.matches.access import (
     judge_auth,
     organizer_auth,
     require_judge_match,
+    require_lease_takeover,
     require_organizer_match,
 )
-from apps.organizations.access import require_organizer_organization
-from apps.teams.access import captain_auth
-from apps.tournaments.access import require_organizer_tournament
 from apps.matches.schemas.events import (
     MatchEventAppendOut,
     MatchEventCreate,
     MatchEventFeedOut,
-    MatchEventOut,
     MatchEventsBatchIn,
     MatchEventsBatchOut,
     ProtocolCorrectionIn,
@@ -36,9 +32,11 @@ from apps.matches.schemas.lineups import (
 )
 from apps.matches.schemas.organizer import (
     AvailableJudgesOut,
+    MatchCloseLiveIn,
     MatchOfficialsIn,
     MatchOfficialsOut,
     MatchSchedulePatchIn,
+    MatchTechnicalResultIn,
     OrganizerMatchCreateIn,
     OrganizerMatchOut,
     VenueListOut,
@@ -54,7 +52,6 @@ from apps.matches.schemas.public import (
     MatchLeaseActionIn,
     MatchLeaseOut,
     MatchLeaseReleasedOut,
-    MatchOut,
     MatchPage,
     TodayOut,
 )
@@ -64,7 +61,33 @@ from apps.matches.selectors import (
     get_public_match,
     matches_for_captain_date,
     matches_for_date,
+    parse_timezone_name,
     public_matches,
+    public_matches_for_local_date,
+)
+from apps.matches.services.lineups import (
+    check_captain_lineup,
+    get_captain_match_lineup,
+    submit_captain_match_lineup,
+    update_captain_match_lineup,
+)
+from apps.matches.services.organizer import (
+    cancel_organizer_match,
+    close_organizer_live_match,
+    correct_organizer_match_event,
+    create_organizer_match,
+    create_organizer_venue,
+    decide_organizer_match_lineup,
+    delete_organizer_venue,
+    get_match_lineups_for_judge,
+    get_organizer_venue,
+    list_available_judges,
+    list_organizer_venues,
+    postpone_organizer_match,
+    replace_match_officials,
+    reschedule_organizer_match,
+    set_organizer_match_technical_result,
+    update_organizer_venue,
 )
 from apps.matches.services.protocol import (
     acquire_match_lease,
@@ -76,27 +99,12 @@ from apps.matches.services.protocol import (
     renew_match_lease,
     takeover_match_lease,
 )
-from apps.matches.services.lineups import (
-    check_captain_lineup,
-    get_captain_match_lineup,
-    submit_captain_match_lineup,
-    update_captain_match_lineup,
-)
-from apps.matches.services.organizer import (
-    correct_organizer_match_event,
-    create_organizer_venue,
-    create_organizer_match,
-    decide_organizer_match_lineup,
-    delete_organizer_venue,
-    get_match_lineups_for_judge,
-    get_organizer_venue,
-    list_available_judges,
-    list_organizer_venues,
-    replace_match_officials,
-    reschedule_organizer_match,
-    update_organizer_venue,
-)
+from apps.organizations.access import require_organizer_organization
+from apps.teams.access import captain_auth
+from apps.tournaments.access import require_organizer_tournament
 from apps.tournaments.selectors import get_public_tournament
+from config.api_errors import api_response
+from config.pagination import paginate
 
 router = Router(tags=["Matches"])
 tournament_matches_router = Router(tags=["Tournament matches"])
@@ -106,22 +114,14 @@ captain_router = Router(tags=["Captain"], auth=captain_auth)
 organizer_router = Router(tags=["Organizer — matches"], auth=organizer_auth)
 
 
-
-
-
-
-@judge_router.get(
-    "/matches/{match_id}/lineups", response=api_response(JudgeLineupsOut)
-)
+@judge_router.get("/matches/{match_id}/lineups", response=api_response(JudgeLineupsOut))
 def judge_match_lineups(request: HttpRequest, match_id: int):
     """Возвращает заявки обоих участников матча и составы игроков."""
     require_judge_match(request, match_id)
     return get_match_lineups_for_judge(match_id)
 
 
-@tournament_matches_router.get(
-    "/{tournament_id}/matches", response=api_response(MatchPage)
-)
+@tournament_matches_router.get("/{tournament_id}/matches", response=api_response(MatchPage))
 def list_tournament_matches(
     request: HttpRequest,
     tournament_id: int,
@@ -129,8 +129,8 @@ def list_tournament_matches(
     page_size: int = Query(20, ge=1, le=100),
     status: MatchStatus | None = None,
     team: int | None = Query(None, ge=1),
-    date_from: Date | None = None,
-    date_to: Date | None = None,
+    date_from: date_type | None = None,
+    date_to: date_type | None = None,
     stage_id: int | None = Query(None, ge=1),
     round_id: int | None = Query(None, ge=1),
     group_id: int | None = Query(None, ge=1),
@@ -166,29 +166,51 @@ def get_match(request: HttpRequest, match_id: int):
 
 
 @today_router.get("/today", response=api_response(TodayOut))
-def today_matches(request: HttpRequest):
-    """Возвращает публичные матчи, назначенные на текущую локальную дату"""
-    today = timezone.localdate()
-    queryset = public_matches(date_from=today, date_to=today)
-    matches = list(queryset)
+def today_matches(request: HttpRequest, timezone: str | None = Query(None, max_length=64)):
+    """Возвращает публичные матчи текущей даты в указанном поясе (по умолчанию UTC)."""
+    try:
+        tz = parse_timezone_name(timezone)
+    except ValueError as error:
+        raise HttpError(422, str(error)) from error
+    today = django_timezone.localdate(timezone=tz)
+    matches = list(public_matches_for_local_date(today, timezone))
     return {
         "date": today,
+        "timezone": tz.key,
         "items": matches,
         "total": len(matches),
     }
 
 
 @judge_router.get("/me/matches", response=api_response(JudgeMatchesOut))
-def my_matches(request: HttpRequest, date: str = "today"):
-    """Возвращает матчи, назначенные судье или занятые им через lease."""
-    match_date = timezone.localdate() if date == "today" else None
-    if match_date is None:
+def my_matches(
+    request: HttpRequest,
+    date: str = "today",
+    timezone: str | None = Query(None, max_length=64),
+):
+    """Возвращает матчи судьи за дату; без пояса используется пояс организации."""
+    try:
+        tz = parse_timezone_name(timezone)
+    except ValueError as error:
+        raise HttpError(422, str(error)) from error
+    if date == "today":
+        match_date = None if timezone is None else django_timezone.localdate(timezone=tz)
+    else:
         try:
-            match_date = Date.fromisoformat(date)
-        except ValueError:
-            raise HttpError(422, "date must be 'today' or an ISO date (YYYY-MM-DD)")
-    matches = list(matches_for_date(match_date, judge_match_ids(request_user_id(request))))
-    return {"date": match_date, "items": matches, "total": len(matches)}
+            match_date = date_type.fromisoformat(date)
+        except ValueError as error:
+            raise HttpError(422, "date must be 'today' or an ISO date (YYYY-MM-DD)") from error
+    matches = matches_for_date(
+        match_date,
+        judge_match_ids(request_user_id(request)),
+        timezone_name=timezone,
+    )
+    return {
+        "date": match_date or django_timezone.localdate(),
+        "timezone": timezone,
+        "items": matches,
+        "total": len(matches),
+    }
 
 
 @judge_router.post("/matches/{match_id}/lease", response=api_response(MatchLeaseOut))
@@ -205,17 +227,23 @@ def renew_lease(request: HttpRequest, match_id: int, payload: MatchLeaseActionIn
     return renew_match_lease(match_id, request_user_id(request), payload.lease_token)
 
 
-@judge_router.post("/matches/{match_id}/lease/release", response=api_response(MatchLeaseReleasedOut))
+@judge_router.post(
+    "/matches/{match_id}/lease/release", response=api_response(MatchLeaseReleasedOut)
+)
 def release_lease(request: HttpRequest, match_id: int, payload: MatchLeaseActionIn):
     """Освобождает lease и оставляет протокол и статус матча без изменений."""
     require_judge_match(request, match_id)
     return release_match_lease(match_id, request_user_id(request), payload.lease_token)
 
 
-@judge_router.post("/matches/{match_id}/lease/takeover", response=api_response(MatchLeaseOut))
+@judge_router.post(
+    "/matches/{match_id}/lease/takeover",
+    response=api_response(MatchLeaseOut),
+    auth=access_token_auth,
+)
 def takeover_lease(request: HttpRequest, match_id: int):
-    """Перехватывает live-матч, выдавая новый токен и отзывая предыдущий."""
-    require_judge_match(request, match_id)
+    """Перехватывает live-матч только при отсутствующей или истёкшей аренде."""
+    require_lease_takeover(request, match_id)
     return takeover_match_lease(match_id, request_user_id(request))
 
 
@@ -226,9 +254,7 @@ def takeover_lease(request: HttpRequest, match_id: int):
 def post_match_event(request: HttpRequest, match_id: int, payload: MatchEventCreate):
     """Добавляет или идемпотентно повторяет событие и возвращает новый счёт."""
     require_judge_match(request, match_id)
-    result, created = append_match_event(
-        match_id, request_user_id(request), payload.model_dump()
-    )
+    result, created = append_match_event(match_id, request_user_id(request), payload.model_dump())
     return (201 if created else 200, result)
 
 
@@ -236,9 +262,7 @@ def post_match_event(request: HttpRequest, match_id: int, payload: MatchEventCre
     "/matches/{match_id}/events/batch",
     response=api_response({201: MatchEventsBatchOut, 200: MatchEventsBatchOut}),
 )
-def post_match_events_batch(
-    request: HttpRequest, match_id: int, payload: MatchEventsBatchIn
-):
+def post_match_events_batch(request: HttpRequest, match_id: int, payload: MatchEventsBatchIn):
     """Атомарно отправляет до 100 событий и возвращает итоговый счёт и seq."""
     require_judge_match(request, match_id)
     result, created = append_match_events(
@@ -271,44 +295,47 @@ def confirm_match_result(request: HttpRequest, match_id: int, payload: MatchConf
 
 
 @captain_router.get("/me/today", response=api_response(TodayOut))
-def captain_today_matches(request: HttpRequest):
-    """Возвращает сегодняшние матчи команд текущего капитана."""
-    today = timezone.localdate()
-    matches = list(matches_for_captain_date(today, request_user_id(request)))
-    return {"date": today, "items": matches, "total": len(matches)}
+def captain_today_matches(request: HttpRequest, timezone: str | None = Query(None, max_length=64)):
+    """Возвращает сегодняшние матчи команд капитана; без пояса — по поясам организаций."""
+    try:
+        tz = parse_timezone_name(timezone)
+    except ValueError as error:
+        raise HttpError(422, str(error)) from error
+    match_date = None if timezone is None else django_timezone.localdate(timezone=tz)
+    matches = matches_for_captain_date(
+        match_date,
+        request_user_id(request),
+        timezone_name=timezone,
+    )
+    return {
+        "date": match_date or django_timezone.localdate(),
+        "timezone": timezone,
+        "items": matches,
+        "total": len(matches),
+    }
 
 
-@captain_router.get(
-    "/matches/{match_id}/lineup", response=api_response(MatchLineupOut)
-)
+@captain_router.get("/matches/{match_id}/lineup", response=api_response(MatchLineupOut))
 def get_captain_lineup(request: HttpRequest, match_id: int):
     """Возвращает текущий состав или предзаполненный ростер капитана."""
     return get_captain_match_lineup(request_user_id(request), match_id)
 
 
-@captain_router.put(
-    "/matches/{match_id}/lineup", response=api_response(MatchLineupOut)
-)
-def put_captain_lineup(
-    request: HttpRequest, match_id: int, payload: LineupUpdateIn
-):
+@captain_router.put("/matches/{match_id}/lineup", response=api_response(MatchLineupOut))
+def put_captain_lineup(request: HttpRequest, match_id: int, payload: LineupUpdateIn):
     """Сохраняет состав капитана как черновик."""
     return update_captain_match_lineup(
         request_user_id(request), match_id, payload.model_dump()["players"]
     )
 
 
-@captain_router.post(
-    "/matches/{match_id}/lineup/submit", response=api_response(LineupCheckOut)
-)
+@captain_router.post("/matches/{match_id}/lineup/submit", response=api_response(LineupCheckOut))
 def submit_match_lineup(request: HttpRequest, match_id: int):
     """Проверяет и отправляет состав матча на рассмотрение."""
     return submit_captain_match_lineup(request_user_id(request), match_id)
 
 
-@captain_router.get(
-    "/lineups/{lineup_id}/check", response=api_response(LineupCheckOut)
-)
+@captain_router.get("/lineups/{lineup_id}/check", response=api_response(LineupCheckOut))
 def check_match_lineup(request: HttpRequest, lineup_id: int):
     """Возвращает ошибки и счётчики проверки состава капитана."""
     return check_captain_lineup(request_user_id(request), lineup_id)
@@ -327,30 +354,59 @@ def organizer_match_create(
     return 201, match
 
 
-@organizer_router.patch(
-    "/matches/{match_id}/schedule", response=api_response(OrganizerMatchOut)
-)
-def organizer_match_reschedule(
-    request: HttpRequest, match_id: int, payload: MatchSchedulePatchIn
-):
+@organizer_router.patch("/matches/{match_id}/schedule", response=api_response(OrganizerMatchOut))
+def organizer_match_reschedule(request: HttpRequest, match_id: int, payload: MatchSchedulePatchIn):
     """Переносит запланированный или отложенный матч."""
     require_organizer_match(request, match_id)
-    return reschedule_organizer_match(
-        match_id, payload.model_dump(exclude_unset=True)
+    return reschedule_organizer_match(match_id, payload.model_dump(exclude_unset=True))
+
+
+@organizer_router.post("/matches/{match_id}/cancel", response=api_response(OrganizerMatchOut))
+def organizer_match_cancel(request: HttpRequest, match_id: int):
+    """Отменяет матч, который ещё не был завершён."""
+    require_organizer_match(request, match_id)
+    return cancel_organizer_match(match_id)
+
+
+@organizer_router.post("/matches/{match_id}/postpone", response=api_response(OrganizerMatchOut))
+def organizer_match_postpone(request: HttpRequest, match_id: int):
+    """Переводит запланированный матч в статус отложенного."""
+    require_organizer_match(request, match_id)
+    return postpone_organizer_match(match_id)
+
+
+@organizer_router.post(
+    "/matches/{match_id}/technical-result",
+    response=api_response(OrganizerMatchOut),
+)
+def organizer_match_technical_result(
+    request: HttpRequest, match_id: int, payload: MatchTechnicalResultIn
+):
+    """Присваивает матчу технический результат с итоговым счётом."""
+    require_organizer_match(request, match_id)
+    return set_organizer_match_technical_result(
+        match_id,
+        payload.home_score,
+        payload.away_score,
+        payload.result_type,
     )
 
 
-@organizer_router.put(
-    "/matches/{match_id}/officials", response=api_response(MatchOfficialsOut)
+@organizer_router.post(
+    "/matches/{match_id}/close-live",
+    response=api_response(OrganizerMatchOut),
 )
-def organizer_match_officials(
-    request: HttpRequest, match_id: int, payload: MatchOfficialsIn
-):
+def organizer_match_close_live(request: HttpRequest, match_id: int, payload: MatchCloseLiveIn):
+    """Принудительно завершает зависший live-матч с указанным счётом."""
+    require_organizer_match(request, match_id)
+    return close_organizer_live_match(match_id, payload.home_score, payload.away_score)
+
+
+@organizer_router.put("/matches/{match_id}/officials", response=api_response(MatchOfficialsOut))
+def organizer_match_officials(request: HttpRequest, match_id: int, payload: MatchOfficialsIn):
     """Полностью назначает официальных лиц матча."""
     require_organizer_match(request, match_id)
-    return replace_match_officials(
-        match_id, [item.model_dump() for item in payload.officials]
-    )
+    return replace_match_officials(match_id, [item.model_dump() for item in payload.officials])
 
 
 @organizer_router.post(
@@ -374,7 +430,9 @@ def organizer_protocol_correction(
     )
 
 
-@organizer_router.get("/organizations/{organization_id}/venues", response=api_response(VenueListOut))
+@organizer_router.get(
+    "/organizations/{organization_id}/venues", response=api_response(VenueListOut)
+)
 def organizer_venues_list(request: HttpRequest, organization_id: int):
     """Lists venues under the organization selected in the URL."""
     require_organizer_organization(request, organization_id)
@@ -382,7 +440,9 @@ def organizer_venues_list(request: HttpRequest, organization_id: int):
     return {"items": items, "total": len(items)}
 
 
-@organizer_router.post("/organizations/{organization_id}/venues", response=api_response({201: VenueOut}))
+@organizer_router.post(
+    "/organizations/{organization_id}/venues", response=api_response({201: VenueOut})
+)
 def organizer_venue_create(request: HttpRequest, organization_id: int, payload: VenueWriteIn):
     """Creates a venue under the selected organization."""
     require_organizer_organization(request, organization_id)
@@ -390,21 +450,29 @@ def organizer_venue_create(request: HttpRequest, organization_id: int, payload: 
     return 201, venue
 
 
-@organizer_router.get("/organizations/{organization_id}/venues/{venue_id}", response=api_response(VenueOut))
+@organizer_router.get(
+    "/organizations/{organization_id}/venues/{venue_id}", response=api_response(VenueOut)
+)
 def organizer_venue_detail(request: HttpRequest, organization_id: int, venue_id: int):
     """Returns one venue within the selected organization."""
     require_organizer_organization(request, organization_id)
     return get_organizer_venue(organization_id, venue_id)
 
 
-@organizer_router.patch("/organizations/{organization_id}/venues/{venue_id}", response=api_response(VenueOut))
-def organizer_venue_patch(request: HttpRequest, organization_id: int, venue_id: int, payload: VenuePatchIn):
+@organizer_router.patch(
+    "/organizations/{organization_id}/venues/{venue_id}", response=api_response(VenueOut)
+)
+def organizer_venue_patch(
+    request: HttpRequest, organization_id: int, venue_id: int, payload: VenuePatchIn
+):
     """Частично обновляет данные площадки."""
     require_organizer_organization(request, organization_id)
     return update_organizer_venue(organization_id, venue_id, payload.model_dump(exclude_unset=True))
 
 
-@organizer_router.delete("/organizations/{organization_id}/venues/{venue_id}", response=api_response({204: None}))
+@organizer_router.delete(
+    "/organizations/{organization_id}/venues/{venue_id}", response=api_response({204: None})
+)
 def organizer_venue_delete(request: HttpRequest, organization_id: int, venue_id: int):
     """Удаляет площадку; связанные матчи остаются без площадки."""
     require_organizer_organization(request, organization_id)
@@ -412,29 +480,25 @@ def organizer_venue_delete(request: HttpRequest, organization_id: int, venue_id:
     return 204, None
 
 
-@organizer_router.get("/organizations/{organization_id}/judges", response=api_response(AvailableJudgesOut))
+@organizer_router.get(
+    "/organizations/{organization_id}/judges", response=api_response(AvailableJudgesOut)
+)
 def organizer_available_judges(request: HttpRequest, organization_id: int):
-    """Возвращает активные учётные записи для назначения официальными лицами."""
+    """Возвращает активных судей из пула выбранной организации."""
     require_organizer_organization(request, organization_id)
     items = list_available_judges(organization_id)
     return {"items": items, "total": len(items)}
 
 
-@organizer_router.patch(
-    "/lineups/{lineup_id}", response=api_response(MatchLineupDecisionOut)
-)
+@organizer_router.patch("/lineups/{lineup_id}", response=api_response(MatchLineupDecisionOut))
 def organizer_match_lineup_decision(
     request: HttpRequest, lineup_id: int, payload: MatchLineupDecisionIn
 ):
     """Принимает или отклоняет отправленный капитаном состав на матч."""
     from apps.matches.models import MatchLineup
 
-    match_id = MatchLineup.objects.filter(pk=lineup_id).values_list(
-        "match_id", flat=True
-    ).first()
+    match_id = MatchLineup.objects.filter(pk=lineup_id).values_list("match_id", flat=True).first()
     if match_id is None:
         raise HttpError(404, "Lineup not found")
     require_organizer_match(request, match_id)
-    return decide_organizer_match_lineup(
-        lineup_id, payload.status, payload.reject_reason
-    )
+    return decide_organizer_match_lineup(lineup_id, payload.status, payload.reject_reason)

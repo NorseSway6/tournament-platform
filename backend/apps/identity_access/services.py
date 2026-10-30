@@ -1,24 +1,20 @@
-from config.domain_errors import DomainError
 import hashlib
 import secrets
 from datetime import timedelta
 
 from django.contrib.auth.password_validation import validate_password
+from django.core import signing
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.utils import timezone
-from django.core import signing
 from django.db.models import Q
+from django.utils import timezone
 
 from apps.identity_access.models import TokenSession, User
+from config.domain_errors import ConflictError, DomainValidationError, UnauthorizedError
 
 ACCESS_TOKEN_SALT = "football-platform.access"
 ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 REFRESH_TOKEN_TTL = timedelta(days=30)
-
-
-
-
 
 
 @transaction.atomic
@@ -28,11 +24,13 @@ def create_user(data: dict) -> User:
     phone = (data.get("phone") or "").strip() or None
     telegram_id = data.get("telegram_id")
     if not (email or phone or telegram_id):
-        raise DomainError("At least one of email, phone, or telegram_id is required", 422)
+        raise DomainValidationError("At least one of email, phone, or telegram_id is required")
 
     username = data["username"].strip()
     if not username:
-        raise DomainError("username cannot be empty", 422)
+        raise DomainValidationError("username cannot be empty")
+    if "@" in username:
+        raise DomainValidationError("username cannot contain @")
     user = User(
         username=username,
         email=email,
@@ -46,9 +44,8 @@ def create_user(data: dict) -> User:
     try:
         validate_password(data["password"], user=user)
     except ValidationError as error:
-        raise DomainError(
+        raise DomainValidationError(
             "Password validation failed",
-            422,
             validation_error=error,
             validation_location=("body", "password"),
         ) from error
@@ -58,24 +55,24 @@ def create_user(data: dict) -> User:
         user.full_clean()
     except ValidationError as error:
         error_items = (
-            item
-            for field_errors in error.error_dict.values()
-            for item in field_errors
-        ) if hasattr(error, "error_dict") else iter(error.error_list)
+            (item for field_errors in error.error_dict.values() for item in field_errors)
+            if hasattr(error, "error_dict")
+            else iter(error.error_list)
+        )
         if any(item.code == "unique" for item in error_items):
-            raise DomainError(
+            raise ConflictError(
                 "One or more user identifiers are already in use",
-                409,
+                code="identifier_taken",
                 validation_error=error,
             ) from error
-        raise DomainError(
-            "User data validation failed", 422, validation_error=error
+        raise DomainValidationError(
+            "User data validation failed", validation_error=error
         ) from error
     try:
         user.save()
     except IntegrityError as error:
-        raise DomainError(
-            "Username, email, phone, or telegram_id is already in use", 409
+        raise ConflictError(
+            "Username, email, phone, or telegram_id is already in use", code="identifier_taken"
         ) from error
     return user
 
@@ -119,16 +116,11 @@ def create_token_pair(user: User) -> dict:
 
 def login_user(identifier: str, password: str) -> dict:
     """Проверяет username, email или телефон и создаёт token-сессию."""
-    user = (
-        User.objects.filter(
-            Q(username__iexact=identifier)
-            | Q(email__iexact=identifier)
-            | Q(phone=identifier)
-        )
-        .first()
-    )
+    user = User.objects.filter(
+        Q(username__iexact=identifier) | Q(email__iexact=identifier) | Q(phone=identifier)
+    ).first()
     if user is None or not user.is_active or not user.check_password(password):
-        raise DomainError("Invalid username or password", 401)
+        raise UnauthorizedError("Invalid username or password")
     return create_token_pair(user)
 
 
@@ -142,12 +134,8 @@ def refresh_token_pair(refresh_token: str) -> dict:
         .first()
     )
     now = timezone.now()
-    if (
-        token_session is None
-        or token_session.expires_at <= now
-        or not token_session.user.is_active
-    ):
-        raise DomainError("Refresh token is invalid or expired", 401)
+    if token_session is None or token_session.expires_at <= now or not token_session.user.is_active:
+        raise UnauthorizedError("Refresh token is invalid or expired")
 
     next_refresh_token = secrets.token_urlsafe(48)
     token_session.refresh_token_hash = _token_hash(next_refresh_token)

@@ -28,9 +28,7 @@ class TournamentMember(models.Model):
                 name="tournaments_member_role_uq",
             ),
         ]
-        indexes = [
-            models.Index(fields=["user", "role"], name="tourn_member_user_role_idx")
-        ]
+        indexes = [models.Index(fields=["user", "role"], name="tourn_member_user_role_idx")]
 
     def __str__(self) -> str:
         """Describes the user's role within the tournament."""

@@ -1,7 +1,4 @@
-from config.domain_errors import DomainError
-from dataclasses import dataclass
 from datetime import timedelta
-from threading import RLock
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -11,154 +8,159 @@ from django.utils import timezone
 
 from apps.matches.models import Match, MatchEvent
 from apps.teams.models import EntryPlayer
+from config.domain_errors import (
+    ConflictError,
+    DomainValidationError,
+    NotFoundError,
+    ResourceLockedError,
+)
 
-
-# Временная личность для judge-среза до появления аутентификации и назначений.
+# Срок жизни аренды матча и поля строки Match, в которых она хранится.
 MATCH_LEASE_SECONDS = 90
-
-
-
-
-@dataclass
-class ActiveLease:
-    token: UUID
-    judge_id: int
-    expires_at: Any
-
-
-_active_leases: dict[int, ActiveLease] = {}
-_lease_lock = RLock()
+LEASE_FIELDS = ["lease_token", "lease_judge", "lease_expires_at"]
 
 
 def _get_match_for_update(match_id: int) -> Match:
     """Загружает строку матча под блокировкой для последовательных изменений."""
     match = Match.objects.select_for_update().filter(pk=match_id).first()
     if match is None:
-        raise DomainError("Match not found", status_code=404)
+        raise NotFoundError("Match not found")
     return match
 
 
-def _lease_for_match(match_id: int) -> ActiveLease | None:
-    """Возвращает lease матча и очищает его, если срок уже истёк."""
-    lease = _active_leases.get(match_id)
-    if lease is not None and lease.expires_at <= timezone.now():
-        _active_leases.pop(match_id, None)
-        return None
-    return lease
+def _clear_expired_lease(match: Match) -> None:
+    """Сбрасывает в памяти истёкшую аренду перед дальнейшими проверками."""
+    if match.lease_expires_at is not None and match.lease_expires_at <= timezone.now():
+        match.lease_token = None
+        match.lease_judge = None
+        match.lease_expires_at = None
 
 
-def _renew_lease(match_id: int, lease: ActiveLease) -> ActiveLease:
-    """Продлевает lease после успешно выполненной операции судьи."""
-    lease.expires_at = timezone.now() + timedelta(seconds=MATCH_LEASE_SECONDS)
-    _active_leases[match_id] = lease
-    return lease
+def _renew_lease(match: Match) -> None:
+    """Продлевает аренду матча после успешной операции судьи."""
+    match.lease_expires_at = timezone.now() + timedelta(seconds=MATCH_LEASE_SECONDS)
+    match.save(update_fields=["lease_expires_at"])
 
 
-def _require_lease(match_id: int, token: UUID, judge_id: int) -> ActiveLease:
-    """Проверяет токен lease и владельца для изменения протокола матча."""
-    lease = _lease_for_match(match_id)
-    if lease is None or lease.token != token or lease.judge_id != judge_id:
-        raise DomainError("Lease is missing, expired, or invalid", status_code=423)
-    return lease
+def _require_lease(match: Match, token: UUID, judge_id: int) -> None:
+    """Проверяет токен аренды и владельца для изменения протокола матча."""
+    if (
+        match.lease_token is None
+        or match.lease_expires_at is None
+        or match.lease_expires_at <= timezone.now()
+    ):
+        raise ResourceLockedError("Lease is missing or expired", code="lease_expired")
+    if match.lease_token != token or match.lease_judge_id != judge_id:
+        raise ResourceLockedError("Lease token or owner does not match", code="lease_invalid")
 
 
 def acquire_match_lease(match_id: int, judge_id: int) -> dict[str, Any]:
     """Открывает матч для указанного судьи или возвращает его текущую аренду."""
-    with _lease_lock, transaction.atomic():
+    with transaction.atomic():
         match = _get_match_for_update(match_id)
-        lease = _lease_for_match(match_id)
-        if lease is not None and lease.judge_id != judge_id:
-            raise DomainError("Match already has an active lease")
+        _clear_expired_lease(match)
+        if match.lease_token is not None and match.lease_judge_id != judge_id:
+            raise ConflictError("Match already has an active lease", code="lease_taken")
         if match.status in (
             Match.Status.CANCELLED,
             Match.Status.CONFIRMED,
             Match.Status.TECHNICAL,
             Match.Status.POSTPONED,
         ):
-            raise DomainError("This match cannot be leased in its current status")
+            raise ConflictError(
+                "This match cannot be leased in its current status", code="lease_status_invalid"
+            )
         if match.home_entry_id is None or match.away_entry_id is None:
-            raise DomainError("Both match participants must be assigned before leasing")
-
-        if lease is None:
-            lease = ActiveLease(
-                token=uuid4(),
-                judge_id=judge_id,
-                expires_at=timezone.now() + timedelta(seconds=MATCH_LEASE_SECONDS),
+            raise ConflictError(
+                "Both match participants must be assigned before leasing",
+                code="participants_missing",
             )
 
+        if match.lease_token is None:
+            match.lease_token = uuid4()
+            match.lease_judge_id = judge_id
+        match.lease_expires_at = timezone.now() + timedelta(seconds=MATCH_LEASE_SECONDS)
+
+        fields_to_update = set(LEASE_FIELDS)
         if match.status in (Match.Status.SCHEDULED, Match.Status.LINEUPS_OPEN):
             match.status = Match.Status.LIVE
             match.started_at = match.started_at or timezone.now()
             match.home_score = match.home_score if match.home_score is not None else 0
             match.away_score = match.away_score if match.away_score is not None else 0
-            match.save(
-                update_fields=["status", "started_at", "home_score", "away_score"]
-            )
+            fields_to_update.update({"status", "started_at", "home_score", "away_score"})
         elif match.status == Match.Status.LIVE and match.home_score is None:
             match.home_score = 0
             match.away_score = 0
-            match.save(update_fields=["home_score", "away_score"])
+            fields_to_update.update({"home_score", "away_score"})
 
-        _renew_lease(match_id, lease)
+        match.save(update_fields=sorted(fields_to_update))
         return {
             "match_id": match.id,
-            "lease_token": lease.token,
-            "expires_at": lease.expires_at,
+            "lease_token": match.lease_token,
+            "expires_at": match.lease_expires_at,
             "expires_in_seconds": MATCH_LEASE_SECONDS,
         }
 
 
 def renew_match_lease(match_id: int, judge_id: int, lease_token: UUID) -> dict[str, Any]:
     """Extends the active judge lease without changing its token."""
-    with _lease_lock:
-        lease = _require_lease(match_id, lease_token, judge_id)
-        _renew_lease(match_id, lease)
+    with transaction.atomic():
+        match = _get_match_for_update(match_id)
+        _require_lease(match, lease_token, judge_id)
+        _renew_lease(match)
         return {
             "match_id": match_id,
-            "lease_token": lease.token,
-            "expires_at": lease.expires_at,
+            "lease_token": match.lease_token,
+            "expires_at": match.lease_expires_at,
             "expires_in_seconds": MATCH_LEASE_SECONDS,
         }
 
 
 def release_match_lease(match_id: int, judge_id: int, lease_token: UUID) -> dict[str, Any]:
     """Releases the active lease while leaving the match protocol intact."""
-    with _lease_lock:
-        _require_lease(match_id, lease_token, judge_id)
-        _active_leases.pop(match_id, None)
+    with transaction.atomic():
+        match = _get_match_for_update(match_id)
+        _require_lease(match, lease_token, judge_id)
+        match.lease_token = None
+        match.lease_judge = None
+        match.lease_expires_at = None
+        match.save(update_fields=LEASE_FIELDS)
         return {"match_id": match_id, "released": True}
 
 
 def takeover_match_lease(match_id: int, judge_id: int) -> dict[str, Any]:
-    """Rotates a live match lease token, invalidating the previous holder."""
-    with _lease_lock, transaction.atomic():
+    """Takes over a live match lease only when it is absent or already expired."""
+    with transaction.atomic():
         match = _get_match_for_update(match_id)
         if match.status != Match.Status.LIVE:
-            raise DomainError("Only a live match can be taken over")
-        lease = ActiveLease(
-            token=uuid4(),
-            judge_id=judge_id,
-            expires_at=timezone.now() + timedelta(seconds=MATCH_LEASE_SECONDS),
-        )
-        _renew_lease(match_id, lease)
+            raise ConflictError("Only a live match can be taken over", code="match_not_live")
+        _clear_expired_lease(match)
+        if match.lease_token is not None:
+            raise ConflictError(
+                "An active lease cannot be taken over; wait for expiry or ask an organizer",
+                code="lease_active",
+            )
+        match.lease_token = uuid4()
+        match.lease_judge_id = judge_id
+        match.lease_expires_at = timezone.now() + timedelta(seconds=MATCH_LEASE_SECONDS)
+        match.save(update_fields=LEASE_FIELDS)
         return {
             "match_id": match_id,
-            "lease_token": lease.token,
-            "expires_at": lease.expires_at,
+            "lease_token": match.lease_token,
+            "expires_at": match.lease_expires_at,
             "expires_in_seconds": MATCH_LEASE_SECONDS,
         }
 
 
 def judge_match_ids(judge_id: int) -> set[int]:
-    """Возвращает матчи, арендованные указанным судьёй."""
-    with _lease_lock:
-        for match_id in list(_active_leases):
-            _lease_for_match(match_id)
-        return {
-            match_id
-            for match_id, lease in _active_leases.items()
-            if lease.judge_id == judge_id
-        }
+    """Возвращает матчи, арендованные указанным судьёй и ещё не истёкшие."""
+    return set(
+        Match.objects.filter(
+            lease_judge_id=judge_id,
+            lease_token__isnull=False,
+            lease_expires_at__gt=timezone.now(),
+        ).values_list("id", flat=True)
+    )
 
 
 def _validate_event(match: Match, event_data: dict[str, Any]) -> MatchEvent | None:
@@ -171,34 +173,35 @@ def _validate_event(match: Match, event_data: dict[str, Any]) -> MatchEvent | No
     participant_ids = {match.home_entry_id, match.away_entry_id} - {None}
 
     if entry_id is not None and entry_id not in participant_ids:
-        raise DomainError("Event entry must be one of the match participants", 422)
+        raise DomainValidationError("Event entry must be one of the match participants")
     if event_type in (MatchEvent.Type.GOAL, MatchEvent.Type.OWN_GOAL) and entry_id is None:
-        raise DomainError("Goal events require entry_id", 422)
-    if player_id is not None:
-        if entry_id is None or not EntryPlayer.objects.filter(pk=player_id, entry_id=entry_id).exists():
-            raise DomainError("entry_player_id must belong to entry_id", 422)
-    if related_player_id is not None:
-        if entry_id is None or not EntryPlayer.objects.filter(
-            pk=related_player_id, entry_id=entry_id
-        ).exists():
-            raise DomainError("related_entry_player_id must belong to entry_id", 422)
+        raise DomainValidationError("Goal events require entry_id")
+    if player_id is not None and (
+        entry_id is None or not EntryPlayer.objects.filter(pk=player_id, entry_id=entry_id).exists()
+    ):
+        raise DomainValidationError("entry_player_id must belong to entry_id")
+    if related_player_id is not None and (
+        entry_id is None
+        or not EntryPlayer.objects.filter(pk=related_player_id, entry_id=entry_id).exists()
+    ):
+        raise DomainValidationError("related_entry_player_id must belong to entry_id")
     if event_type == MatchEvent.Type.SUBSTITUTION:
         if player_id is None or related_player_id is None:
-            raise DomainError("Substitution events require both player IDs", 422)
+            raise DomainValidationError("Substitution events require both player IDs")
         if player_id == related_player_id:
-            raise DomainError("A substitution requires two different players", 422)
+            raise DomainValidationError("A substitution requires two different players")
     elif related_player_id is not None:
-        raise DomainError("related_entry_player_id is only valid for substitution", 422)
+        raise DomainValidationError("related_entry_player_id is only valid for substitution")
 
     if event_type in (MatchEvent.Type.VOID, MatchEvent.Type.REVIEW_OK):
         if target_event_id is None:
-            raise DomainError("Revision events require target_event_id", 422)
+            raise DomainValidationError("Revision events require target_event_id")
         target = MatchEvent.objects.filter(pk=target_event_id, match=match).first()
         if target is None or target.type in (MatchEvent.Type.VOID, MatchEvent.Type.REVIEW_OK):
-            raise DomainError("target_event_id must reference a base event in this match", 422)
+            raise DomainValidationError("target_event_id must reference a base event in this match")
         return target
     if target_event_id is not None:
-        raise DomainError("target_event_id is only valid for revision events", 422)
+        raise DomainValidationError("target_event_id is only valid for revision events")
     return None
 
 
@@ -244,70 +247,72 @@ def append_match_event(
     if event_data["clock_ms"] is not None:
         event_data["minute"] = event_data["clock_ms"] // 60_000
         event_data["second"] = (event_data["clock_ms"] % 60_000) // 1_000
-    with _lease_lock:
-        lease = _require_lease(match_id, lease_token, judge_id)
-        with transaction.atomic():
-            match = _get_match_for_update(match_id)
-            existing = MatchEvent.objects.filter(pk=event_data["id"]).first()
-            if existing is None and event_data["client_seq"] is not None:
-                existing = MatchEvent.objects.filter(
-                    match_id=match_id,
-                    device_id=event_data["device_id"],
-                    client_seq=event_data["client_seq"],
-                ).first()
-            if existing is not None:
-                fields_match = (
-                    existing.match_id == match_id
-                    and existing.device_id == event_data["device_id"]
-                    and existing.client_seq == event_data["client_seq"]
-                    and existing.type == event_data["type"]
-                    and existing.entry_id == event_data["entry_id"]
-                    and existing.player_id == event_data["entry_player_id"]
-                    and existing.related_player_id == event_data["related_entry_player_id"]
-                    and existing.period == event_data["period"]
-                    and existing.clock_ms == event_data["clock_ms"]
-                    and existing.needs_review == event_data["needs_review"]
-                    and existing.minute == event_data["minute"]
-                    and existing.second == event_data["second"]
-                    and existing.client_created_at == event_data["client_created_at"]
-                    and existing.target_event_id == event_data["target_event_id"]
-                )
-                if not fields_match:
-                    raise DomainError("Device sequence or event ID already exists with different data")
-                _renew_lease(match_id, lease)
-                return _event_append_result(existing, match), False
-
-            if match.status != Match.Status.LIVE:
-                raise DomainError("Events can only be added to a live match")
-            _validate_event(match, event_data)
-            last_seq = MatchEvent.objects.filter(match=match).aggregate(value=Max("seq"))["value"] or 0
-            event = MatchEvent.objects.create(
-                id=event_data["id"],
-                match=match,
-                seq=last_seq + 1,
+    with transaction.atomic():
+        match = _get_match_for_update(match_id)
+        _require_lease(match, lease_token, judge_id)
+        existing = MatchEvent.objects.filter(pk=event_data["id"]).first()
+        if existing is None and event_data["client_seq"] is not None:
+            existing = MatchEvent.objects.filter(
+                match_id=match_id,
                 device_id=event_data["device_id"],
                 client_seq=event_data["client_seq"],
-                type=event_data["type"],
-                entry_id=event_data["entry_id"],
-                player_id=event_data["entry_player_id"],
-                related_player_id=event_data["related_entry_player_id"],
-                period=event_data["period"],
-                clock_ms=event_data["clock_ms"],
-                minute=event_data["minute"],
-                second=event_data["second"],
-                client_created_at=event_data["client_created_at"],
-                target_event_id=event_data["target_event_id"],
-                needs_review=event_data["needs_review"],
-                source=MatchEvent.Source.JUDGE,
+            ).first()
+        if existing is not None:
+            fields_match = (
+                existing.match_id == match_id
+                and existing.device_id == event_data["device_id"]
+                and existing.client_seq == event_data["client_seq"]
+                and existing.type == event_data["type"]
+                and existing.entry_id == event_data["entry_id"]
+                and existing.player_id == event_data["entry_player_id"]
+                and existing.related_player_id == event_data["related_entry_player_id"]
+                and existing.period == event_data["period"]
+                and existing.clock_ms == event_data["clock_ms"]
+                and existing.needs_review == event_data["needs_review"]
+                and existing.minute == event_data["minute"]
+                and existing.second == event_data["second"]
+                and existing.client_created_at == event_data["client_created_at"]
+                and existing.target_event_id == event_data["target_event_id"]
             )
-            match.home_score, match.away_score = calculate_match_score(match)
-            fields_to_update = ["home_score", "away_score"]
-            if event.type == MatchEvent.Type.FINISH:
-                match.status = Match.Status.FINISHED
-                match.finished_at = timezone.now()
-                fields_to_update.extend(["status", "finished_at"])
-            match.save(update_fields=fields_to_update)
-        _renew_lease(match_id, lease)
+            if not fields_match:
+                raise ConflictError(
+                    "Device sequence or event ID already exists with different data",
+                    code="event_conflict",
+                )
+            _renew_lease(match)
+            return _event_append_result(existing, match), False
+
+        if match.status != Match.Status.LIVE:
+            raise ConflictError("Events can only be added to a live match", code="match_not_live")
+        _validate_event(match, event_data)
+        last_seq = MatchEvent.objects.filter(match=match).aggregate(value=Max("seq"))["value"] or 0
+        event = MatchEvent.objects.create(
+            id=event_data["id"],
+            match=match,
+            seq=last_seq + 1,
+            device_id=event_data["device_id"],
+            client_seq=event_data["client_seq"],
+            type=event_data["type"],
+            entry_id=event_data["entry_id"],
+            player_id=event_data["entry_player_id"],
+            related_player_id=event_data["related_entry_player_id"],
+            period=event_data["period"],
+            clock_ms=event_data["clock_ms"],
+            minute=event_data["minute"],
+            second=event_data["second"],
+            client_created_at=event_data["client_created_at"],
+            target_event_id=event_data["target_event_id"],
+            needs_review=event_data["needs_review"],
+            source=MatchEvent.Source.JUDGE,
+        )
+        match.home_score, match.away_score = calculate_match_score(match)
+        fields_to_update = ["home_score", "away_score"]
+        if event.type == MatchEvent.Type.FINISH:
+            match.status = Match.Status.FINISHED
+            match.finished_at = timezone.now()
+            fields_to_update.extend(["status", "finished_at"])
+        match.save(update_fields=fields_to_update)
+        _renew_lease(match)
         event.voided = False
         return _event_append_result(event, match), True
 
@@ -315,7 +320,9 @@ def append_match_event(
 def _event_append_result(event: MatchEvent, match: Match) -> dict[str, Any]:
     """Builds the stable append response envelope from persisted match state."""
     match.refresh_from_db(fields=["home_score", "away_score"])
-    last_seq = MatchEvent.objects.filter(match_id=match.id).aggregate(value=Max("seq"))["value"] or 0
+    last_seq = (
+        MatchEvent.objects.filter(match_id=match.id).aggregate(value=Max("seq"))["value"] or 0
+    )
     if not hasattr(event, "voided"):
         event.voided = MatchEvent.objects.filter(
             type=MatchEvent.Type.VOID, target_event_id=event.id
@@ -334,8 +341,9 @@ def append_match_events(
     """Appends a batch atomically and returns its event list and latest score."""
     results = []
     created_any = False
-    with _lease_lock, transaction.atomic():
-        _require_lease(match_id, lease_token, judge_id)
+    with transaction.atomic():
+        match = _get_match_for_update(match_id)
+        _require_lease(match, lease_token, judge_id)
         for item in events_data:
             result, created = append_match_event(
                 match_id, judge_id, {**item, "lease_token": lease_token}
@@ -343,11 +351,18 @@ def append_match_events(
             results.append(result["event"])
             created_any = created_any or created
         match = _get_match_for_update(match_id)
-        latest = _event_append_result(results[-1], match) if results else {
-            "home_score": match.home_score,
-            "away_score": match.away_score,
-            "last_seq": MatchEvent.objects.filter(match=match).aggregate(value=Max("seq"))["value"] or 0,
-        }
+        latest = (
+            _event_append_result(results[-1], match)
+            if results
+            else {
+                "home_score": match.home_score,
+                "away_score": match.away_score,
+                "last_seq": MatchEvent.objects.filter(match=match).aggregate(value=Max("seq"))[
+                    "value"
+                ]
+                or 0,
+            }
+        )
         return {
             "items": results,
             "home_score": latest["home_score"],
@@ -358,17 +373,16 @@ def append_match_events(
 
 def confirm_match(match_id: int, judge_id: int, lease_token: UUID) -> Match:
     """Подтверждает завершённый матч при действующем lease-token."""
-    with _lease_lock:
-        lease = _require_lease(match_id, lease_token, judge_id)
-        with transaction.atomic():
-            match = _get_match_for_update(match_id)
-            if match.status == Match.Status.CONFIRMED:
-                _renew_lease(match_id, lease)
-                return match
-            if match.status != Match.Status.FINISHED:
-                raise DomainError("Only a finished match can be confirmed")
-            match.status = Match.Status.CONFIRMED
-            match.confirmed_at = timezone.now()
-            match.save(update_fields=["status", "confirmed_at"])
-        _renew_lease(match_id, lease)
+    with transaction.atomic():
+        match = _get_match_for_update(match_id)
+        _require_lease(match, lease_token, judge_id)
+        if match.status == Match.Status.CONFIRMED:
+            _renew_lease(match)
+            return match
+        if match.status != Match.Status.FINISHED:
+            raise ConflictError("Only a finished match can be confirmed", code="match_not_finished")
+        match.status = Match.Status.CONFIRMED
+        match.confirmed_at = timezone.now()
+        match.save(update_fields=["status", "confirmed_at"])
+        _renew_lease(match)
         return match

@@ -1,6 +1,7 @@
-from django.db import models
-from django.conf import settings
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from django.conf import settings
+from django.db import models
 
 
 def validate_timezone_name(value: str) -> None:
@@ -18,9 +19,7 @@ class Organization(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
-    timezone = models.CharField(
-        max_length=64, default="UTC", validators=[validate_timezone_name]
-    )
+    timezone = models.CharField(max_length=64, default="UTC", validators=[validate_timezone_name])
     contacts = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -37,10 +36,9 @@ class OrganizationMember(models.Model):
 
     class Role(models.TextChoices):
         ORGANIZER = "organizer", "Organizer"
+        REFEREE = "referee", "Referee"
 
-    organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE, related_name="members"
-    )
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="members")
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="organization_memberships"
     )

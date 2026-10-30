@@ -1,7 +1,14 @@
 from django.contrib import admin
 
 from apps.teams.models import EntryPlayer, TournamentEntry
-from apps.tournaments.models import Group, Round, Stage, Tournament, TournamentMember
+from apps.tournaments.models import (
+    Group,
+    GroupEntry,
+    Round,
+    Stage,
+    Tournament,
+    TournamentMember,
+)
 
 
 class TournamentMemberInline(admin.TabularInline):
@@ -24,6 +31,13 @@ class GroupInline(admin.TabularInline):
     model = Group
     extra = 0
     fields = ("ord", "name")
+
+
+class GroupEntryInline(admin.TabularInline):
+    model = GroupEntry
+    extra = 0
+    autocomplete_fields = ("entry",)
+    fields = ("entry",)
 
 
 class StageInline(admin.TabularInline):
@@ -113,6 +127,7 @@ class GroupAdmin(admin.ModelAdmin):
     list_filter = ("stage__tournament",)
     search_fields = ("name", "stage__name", "stage__tournament__name")
     autocomplete_fields = ("stage",)
+    inlines = (GroupEntryInline,)
 
     @admin.display(description="Tournament", ordering="stage__tournament__name")
     def tournament_name(self, obj):

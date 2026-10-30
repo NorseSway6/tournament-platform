@@ -1,9 +1,11 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ninja import Schema
 from pydantic import Field, field_validator
+
+OrganizationMemberRole = Literal["organizer", "referee"]
 
 
 def _validate_timezone(value: str) -> str:
@@ -33,6 +35,53 @@ class OrganizationListOut(Schema):
     """Ответ со списком организаций"""
 
     items: list[OrganizationOut]
+    total: int
+
+
+class OrganizationMemberAddIn(Schema):
+    """Добавление участника организации по username или email."""
+
+    identifier: str = Field(min_length=1, max_length=254)
+    role: OrganizationMemberRole = "organizer"
+
+
+class OrganizationMemberOut(Schema):
+    """Участник организации и его роль в ней."""
+
+    id: int
+    user_id: int
+    username: str
+    display_name: str
+    email: str | None
+    role: OrganizationMemberRole
+    created_at: datetime
+
+    @staticmethod
+    def resolve_user_id(member) -> int:
+        """Возвращает идентификатор пользователя из членства."""
+        return member.user_id
+
+    @staticmethod
+    def resolve_username(member) -> str:
+        """Возвращает username участника."""
+        return member.user.username
+
+    @staticmethod
+    def resolve_display_name(member) -> str:
+        """Возвращает отображаемое имя участника."""
+        user = member.user
+        return user.display_name or user.get_full_name() or user.username
+
+    @staticmethod
+    def resolve_email(member) -> str | None:
+        """Возвращает email участника."""
+        return member.user.email
+
+
+class OrganizationMemberListOut(Schema):
+    """Список участников организации."""
+
+    items: list[OrganizationMemberOut]
     total: int
 
 

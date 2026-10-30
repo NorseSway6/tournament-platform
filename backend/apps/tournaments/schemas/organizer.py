@@ -55,7 +55,6 @@ class OrganizerTournamentWriteIn(Schema):
     slug: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=200)
     season: str = Field(default="", max_length=50)
-    status: TournamentStatus = "draft"
     visibility: TournamentVisibility = "public"
     regulation: dict[str, Any] = Field(default_factory=dict)
     registration_deadline: datetime | None = None
@@ -96,6 +95,40 @@ class OrganizerEntriesOut(Schema):
 
     items: list[OrganizerEntryOut]
     total: int
+
+
+class OrganizerGroupEntryOut(Schema):
+    """Принятая заявка, назначенная в группу этапа."""
+
+    entry_id: int
+    team_id: int
+    team_name: str
+    status: TournamentEntryStatus
+
+    @staticmethod
+    def resolve_team_id(item):
+        return item.entry.team_id
+
+    @staticmethod
+    def resolve_team_name(item):
+        return item.entry.team.name
+
+    @staticmethod
+    def resolve_status(item):
+        return item.entry.status
+
+
+class OrganizerGroupEntriesOut(Schema):
+    """Список заявок, назначенных в группу."""
+
+    items: list[OrganizerGroupEntryOut]
+    total: int
+
+
+class GroupEntriesReplaceIn(Schema):
+    """Полный список заявок, которые должны быть назначены в группу."""
+
+    entry_ids: list[int] = Field(default_factory=list)
 
 
 class StagePatchIn(Schema):
@@ -154,9 +187,7 @@ class OrganizerTournamentPatchIn(Schema):
     slug: str | None = Field(default=None, min_length=1, max_length=64)
     name: str | None = Field(default=None, min_length=1, max_length=200)
     season: str | None = Field(default=None, max_length=50)
-    status: TournamentStatus | None = None
     visibility: TournamentVisibility | None = None
-    regulation: dict[str, Any] | None = None
     registration_deadline: datetime | None = None
     starts_on: date | None = None
     ends_on: date | None = None

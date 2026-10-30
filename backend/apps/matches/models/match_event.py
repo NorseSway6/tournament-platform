@@ -31,7 +31,7 @@ class MatchEvent(models.Model):
         RESUME = "resume"
         FINISH = "finish"
         VOID = "void"
-        REVIEW_OK = "review_ok"       
+        REVIEW_OK = "review_ok"
         NOTE = "note"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -40,10 +40,21 @@ class MatchEvent(models.Model):
     device_id = models.UUIDField(null=True, blank=True)
     client_seq = models.PositiveIntegerField(null=True, blank=True)
     type = models.CharField(max_length=20, choices=Type.choices)
-    entry = models.ForeignKey("teams.TournamentEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
-    player = models.ForeignKey("teams.EntryPlayer", null=True, blank=True, on_delete=models.PROTECT, related_name="match_events")
+    entry = models.ForeignKey(
+        "teams.TournamentEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
+    player = models.ForeignKey(
+        "teams.EntryPlayer",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="match_events",
+    )
     related_player = models.ForeignKey(
-        "teams.EntryPlayer", null=True, blank=True, on_delete=models.PROTECT,
+        "teams.EntryPlayer",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
         related_name="related_match_events",
     )
     period = models.CharField(max_length=24, choices=Period.choices, null=True, blank=True)
@@ -81,7 +92,23 @@ class MatchEvent(models.Model):
                 name="matches_event_target_required_ck",
             ),
             models.CheckConstraint(
-                condition=Q(type__in=["goal", "own_goal", "yellow", "red", "sub", "period_start", "period_end", "pause", "resume", "finish", "void", "review_ok", "note"]),
+                condition=Q(
+                    type__in=[
+                        "goal",
+                        "own_goal",
+                        "yellow",
+                        "red",
+                        "sub",
+                        "period_start",
+                        "period_end",
+                        "pause",
+                        "resume",
+                        "finish",
+                        "void",
+                        "review_ok",
+                        "note",
+                    ]
+                ),
                 name="matches_event_type_valid_ck",
             ),
             models.CheckConstraint(
@@ -106,8 +133,14 @@ class MatchEvent(models.Model):
             raise ValidationError({"entry": "Entry must belong to the match tournament."})
         if self.player_id and self.entry_id and self.player.entry_id != self.entry_id:
             raise ValidationError({"player": "Player must belong to the selected entry."})
-        if self.related_player_id and self.entry_id and self.related_player.entry_id != self.entry_id:
-            raise ValidationError({"related_player": "Related player must belong to the selected entry."})
+        if (
+            self.related_player_id
+            and self.entry_id
+            and self.related_player.entry_id != self.entry_id
+        ):
+            raise ValidationError(
+                {"related_player": "Related player must belong to the selected entry."}
+            )
 
     def __str__(self) -> str:
         """Показывает номер события и его тип."""
