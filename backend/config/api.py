@@ -6,24 +6,36 @@ from django.http import Http404
 from ninja import NinjaAPI, Schema
 from ninja.errors import AuthenticationError, HttpError, ValidationError
 
+from apps.common.api_errors import (
+    ErrorOut,
+    api_response,
+    handle_authentication_error,
+    handle_domain_error,
+    handle_http_error,
+    handle_not_found,
+    handle_unexpected_error,
+    handle_validation_error,
+)
+from apps.common.errors import DomainError
 from apps.identity_access.api.routes import router as identity_router
 from apps.matches.api.routes import (
     captain_router as match_captain_router,
 )
 from apps.matches.api.routes import (
-    judge_router,
-    today_router,
-    tournament_matches_router,
+    judge_router as match_judge_router,
 )
 from apps.matches.api.routes import (
     organizer_router as match_organizer_router,
 )
-from apps.matches.api.routes import router as matches_router
+from apps.matches.api.routes import (
+    public_router as matches_public_router,
+)
 from apps.organizations.api.routes import (
     public_router as organizations_public_router,
 )
-from apps.organizations.api.routes import router as organizations_organizer_router
-from apps.teams.api.entries import router as team_entries_router
+from apps.organizations.api.routes import (
+    router as organizations_organizer_router,
+)
 from apps.teams.api.routes import (
     captain_router as team_captain_router,
 )
@@ -37,19 +49,8 @@ from apps.tournaments.api.routes import (
     organizer_router as tournament_organizer_router,
 )
 from apps.tournaments.api.routes import (
-    router as tournaments_router,
+    public_router as tournaments_public_router,
 )
-from config.api_errors import (
-    ErrorOut,
-    api_response,
-    handle_authentication_error,
-    handle_domain_error,
-    handle_http_error,
-    handle_not_found,
-    handle_unexpected_error,
-    handle_validation_error,
-)
-from config.domain_errors import DomainError
 
 
 class HealthResponse(Schema):
@@ -105,23 +106,21 @@ def readiness_check(request):
         }
     return {"status": "ok", "database": "ok"}
 
+
 # Публичные роутеры
-api.add_router("/tournaments", tournaments_router)
-api.add_router("/tournaments", tournament_matches_router)
-api.add_router("/matches", matches_router)
+api.add_router("/tournaments", tournaments_public_router)
+api.add_router("", matches_public_router)
 api.add_router("/organizations", organizations_public_router)
-api.add_router("", today_router)
 api.add_router("", teams_router)
 
 # Роутеры ролей
-api.add_router("", judge_router)
+api.add_router("", match_judge_router)
 api.add_router("", match_captain_router)
 api.add_router("", team_captain_router)
 api.add_router("/organizer", tournament_organizer_router)
 api.add_router("/organizer", organizations_organizer_router)
 api.add_router("/organizer", team_organizer_router)
 api.add_router("/organizer", match_organizer_router)
-api.add_router("", team_entries_router)
 
 # Роутер авторизации
 api.add_router("", identity_router)

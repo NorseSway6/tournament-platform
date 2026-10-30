@@ -133,6 +133,20 @@ class Match(models.Model):
             ),
         ]
 
+    def __str__(self) -> str:
+        """Возвращает краткое название матча для админки и журналов."""
+        return f"Match #{self.pk} — {self.tournament.name}"
+
+    def save(self, *args, **kwargs):
+        """Пересчитывает плановое время окончания матча перед сохранением."""
+        self.scheduled_end = (
+            self.scheduled_at + timedelta(minutes=self.duration_min) if self.scheduled_at else None
+        )
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and {"scheduled_at", "duration_min"} & set(update_fields):
+            kwargs["update_fields"] = {*update_fields, "scheduled_end"}
+        super().save(*args, **kwargs)
+
     def clean(self):
         """Проверяет, что этап, тур и заявки принадлежат этому турниру."""
         errors = {}
@@ -152,17 +166,3 @@ class Match(models.Model):
             errors["away_entry"] = "Home and away entries must be different."
         if errors:
             raise ValidationError(errors)
-
-    def save(self, *args, **kwargs):
-        """Пересчитывает плановое время окончания матча перед сохранением."""
-        self.scheduled_end = (
-            self.scheduled_at + timedelta(minutes=self.duration_min) if self.scheduled_at else None
-        )
-        update_fields = kwargs.get("update_fields")
-        if update_fields is not None and {"scheduled_at", "duration_min"} & set(update_fields):
-            kwargs["update_fields"] = {*update_fields, "scheduled_end"}
-        super().save(*args, **kwargs)
-
-    def __str__(self) -> str:
-        """Возвращает краткое название матча для админки и журналов."""
-        return f"Match #{self.pk} — {self.tournament.name}"

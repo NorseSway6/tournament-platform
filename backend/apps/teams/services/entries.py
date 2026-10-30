@@ -1,14 +1,14 @@
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.teams.models import EntryPlayer, Player, Team, TournamentEntry
-from apps.tournaments.models import Tournament
-from config.domain_errors import (
+from apps.common.errors import (
     ConflictError,
     DomainValidationError,
     ForbiddenError,
     NotFoundError,
 )
+from apps.teams.models import EntryPlayer, Player, Team, TournamentEntry
+from apps.tournaments.models import Tournament
 
 
 def get_captain_entry_players(captain_id: int, entry_id: int) -> dict:

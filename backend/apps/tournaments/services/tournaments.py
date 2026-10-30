@@ -3,9 +3,9 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 
+from apps.common.errors import ConflictError, DomainValidationError, NotFoundError
 from apps.organizations.models import Organization, OrganizationMember
 from apps.tournaments.models import Tournament, TournamentMember
-from config.domain_errors import ConflictError, DomainValidationError, NotFoundError
 
 
 def _validate_dates(data: dict) -> None:
@@ -58,11 +58,11 @@ def _organizer_tournament(tournament_id: int) -> Tournament:
 
 
 def list_organizer_tournaments(organization_id: int, user_id: int) -> list[Tournament]:
-    """Returns only tournaments inside the caller's assigned organizer scope."""
+    """Возвращает турниры, вхожящие в область ответственности организатора, назначенного для вызывающего."""
     if not Organization.objects.filter(pk=organization_id).exists():
         raise NotFoundError("Organization not found")
-    User = get_user_model()
-    user = User.objects.filter(pk=user_id).only("is_superuser", "is_platform_admin").first()
+    user_model = get_user_model()
+    user = user_model.objects.filter(pk=user_id).only("is_superuser", "is_platform_admin").first()
     if user and (
         user.is_superuser
         or user.is_platform_admin
@@ -114,7 +114,7 @@ def create_organizer_tournament(data: dict) -> Tournament:
 
 
 def update_organizer_tournament(tournament_id: int, data: dict) -> Tournament:
-    """Partially updates tournament fields while retaining its organization."""
+    """Частично обновляет поля турнира, сохраняя при этом его структуру."""
     if not data:
         raise DomainValidationError("At least one field must be provided")
     if "status" in data or "regulation" in data:
@@ -172,7 +172,7 @@ def _transition_tournament(
     target_status: str,
     message: str,
 ) -> Tournament:
-    """Applies one explicit tournament status transition atomically."""
+    """Атомарно выполняет один явный переход состояния турнира."""
     with transaction.atomic():
         tournament = Tournament.objects.select_for_update().filter(pk=tournament_id).first()
         if tournament is None:
@@ -185,7 +185,7 @@ def _transition_tournament(
 
 
 def open_tournament_registration(tournament_id: int) -> Tournament:
-    """Moves a draft tournament into registration."""
+    """Переводит турнир из статуса черновика в стадию регистрации."""
     return _transition_tournament(
         tournament_id,
         (Tournament.Status.DRAFT,),
@@ -195,7 +195,7 @@ def open_tournament_registration(tournament_id: int) -> Tournament:
 
 
 def start_organizer_tournament(tournament_id: int) -> Tournament:
-    """Starts a tournament that is accepting entries."""
+    """Запускает турнир, в который принимаются заявки на участие."""
     return _transition_tournament(
         tournament_id,
         (Tournament.Status.REGISTRATION,),
@@ -205,7 +205,7 @@ def start_organizer_tournament(tournament_id: int) -> Tournament:
 
 
 def finish_organizer_tournament(tournament_id: int) -> Tournament:
-    """Finishes an ongoing tournament."""
+    """Завершает текущий турнир."""
     return _transition_tournament(
         tournament_id,
         (Tournament.Status.ONGOING,),
@@ -225,7 +225,7 @@ def delete_organizer_tournament(tournament_id: int) -> None:
 
 
 def organizer_entries(tournament_id: int) -> list:
-    """Lists entry applications with team, captain, and active roster size."""
+    """Содержит список заявок на участие с указанием команды, капитана и численности активного состава."""
     tournament = _organizer_tournament(tournament_id)
     return list(
         tournament.entries.select_related("team", "team__captain")

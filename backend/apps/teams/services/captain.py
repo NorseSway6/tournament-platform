@@ -1,15 +1,15 @@
 from django.db import transaction
 
-from apps.identity_access.models import User
-from apps.identity_access.selectors import get_active_user_by_identifier
-from apps.teams.models import Team
-from config.domain_errors import (
+from apps.common.errors import (
     ConflictError,
     DomainValidationError,
     ForbiddenError,
     NotFoundError,
     ServiceUnavailableError,
 )
+from apps.identity_access.models import User
+from apps.identity_access.selectors import get_active_user_by_identifier
+from apps.teams.models import Team
 
 
 def create_captain_team(captain_id: int, data: dict) -> Team:

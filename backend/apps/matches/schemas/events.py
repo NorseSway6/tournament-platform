@@ -69,12 +69,12 @@ class MatchEventOut(Schema):
 
     @staticmethod
     def resolve_voided(event) -> bool:
-        """Reports whether an append-only correction voided this event."""
+        """Сообщает, было ли данное событие аннулировано корректировкой, допускающей только добавление записей."""
         return bool(getattr(event, "voided", False))
 
     @staticmethod
     def resolve_related_entry_player_id(event) -> int | None:
-        """Serializes the second player in a substitution, if present."""
+        """Сериализует второго игрока в рамках замены, если таковой имеется."""
         return event.related_player_id
 
 

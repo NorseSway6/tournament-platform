@@ -3,7 +3,7 @@ from django.db import models
 
 
 class TournamentMember(models.Model):
-    """A user's permission assignment scoped to one tournament."""
+    """Назначение прав пользователя, ограниченное рамками одного турнира."""
 
     class Role(models.TextChoices):
         ORGANIZER = "organizer", "Organizer"
@@ -31,5 +31,5 @@ class TournamentMember(models.Model):
         indexes = [models.Index(fields=["user", "role"], name="tourn_member_user_role_idx")]
 
     def __str__(self) -> str:
-        """Describes the user's role within the tournament."""
+        """Описывает роль пользователя в рамках турнира."""
         return f"{self.user} — {self.role} ({self.tournament})"

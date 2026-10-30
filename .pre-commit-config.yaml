@@ -3,6 +3,7 @@ repos:
     rev: v0.17.1
     hooks:
       - id: ruff-check
-        args: [--fix]
+        args: [backend]
+        pass_filenames: false
       - id: ruff-format
         files: ^backend/

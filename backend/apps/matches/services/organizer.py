@@ -7,6 +7,12 @@ from django.db import IntegrityError, transaction
 from django.db.models import Max
 from django.utils import timezone
 
+from apps.common.errors import (
+    ConflictError,
+    DomainValidationError,
+    ForbiddenError,
+    NotFoundError,
+)
 from apps.matches.models import (
     Match,
     MatchEvent,
@@ -18,12 +24,6 @@ from apps.matches.models import (
 from apps.matches.services.protocol import LEASE_FIELDS, calculate_match_score
 from apps.teams.models import EntryPlayer, TournamentEntry
 from apps.tournaments.models import Group, Round, Stage, Tournament
-from config.domain_errors import (
-    ConflictError,
-    DomainValidationError,
-    ForbiddenError,
-    NotFoundError,
-)
 
 
 def list_organizer_venues(organization_id: int) -> list[Venue]:
@@ -276,9 +276,12 @@ def reschedule_organizer_match(match_id: int, changes: dict[str, Any]) -> Match:
             raise ConflictError(
                 "Only scheduled or postponed matches can be moved", code="match_not_movable"
             )
-        if "venue_id" in changes and changes["venue_id"] is not None:
-            if not match.tournament.organization.venues.filter(pk=changes["venue_id"]).exists():
-                raise DomainValidationError("Venue must belong to the tournament organization")
+        if (
+            "venue_id" in changes
+            and changes["venue_id"] is not None
+            and not match.tournament.organization.venues.filter(pk=changes["venue_id"]).exists()
+        ):
+            raise DomainValidationError("Venue must belong to the tournament organization")
         if "scheduled_at" in changes:
             match.scheduled_at = changes["scheduled_at"]
         if "venue_id" in changes:
@@ -413,8 +416,10 @@ def replace_match_officials(match_id: int, officials: list[dict[str, Any]]) -> d
         official_ids = [item["official_id"] for item in officials]
         if len(official_ids) != len(set(official_ids)):
             raise DomainValidationError("An official can only be assigned once per match")
-        User = get_user_model()
-        users = {user.pk: user for user in User.objects.filter(pk__in=official_ids, is_active=True)}
+        user_model = get_user_model()
+        users = {
+            user.pk: user for user in user_model.objects.filter(pk__in=official_ids, is_active=True)
+        }
         if len(users) != len(official_ids):
             raise DomainValidationError("Every official_id must belong to an active user")
         from apps.organizations.models import OrganizationMember

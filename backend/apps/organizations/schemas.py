@@ -98,7 +98,7 @@ class OrganizationCreateIn(Schema):
     @field_validator("timezone")
     @classmethod
     def timezone_must_be_valid(cls, value: str) -> str:
-        """Rejects invalid time zones before calling the domain service."""
+        """Отклоняет недопустимые часовые пояса перед вызовом доменного сервиса."""
         return _validate_timezone(value)
 
 
@@ -115,5 +115,5 @@ class OrganizationPatchIn(Schema):
     @field_validator("timezone")
     @classmethod
     def timezone_must_be_valid(cls, value: str | None) -> str | None:
-        """Rejects invalid time zones while preserving omitted/null semantics."""
+        """Отклоняет некорректные часовые пояса, сохраняя при этом семантику для пропущенных или null-значений."""
         return _validate_timezone(value) if value is not None else value

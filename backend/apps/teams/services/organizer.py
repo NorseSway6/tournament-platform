@@ -1,14 +1,14 @@
 from django.db import transaction
 
+from apps.common.errors import ConflictError, DomainValidationError, NotFoundError
 from apps.teams.models import TournamentEntry
 from apps.tournaments.models import Tournament
-from config.domain_errors import ConflictError, DomainValidationError, NotFoundError
 
 
 def decide_organizer_entry(
     entry_id: int, status: str, decision_comment: str = ""
 ) -> TournamentEntry:
-    """Applies an organizer's decision to a pending tournament entry."""
+    """Применяет решение организатора к ожидающей рассмотрения заявке на участие в турнире."""
     if status not in (TournamentEntry.Status.ACCEPTED, TournamentEntry.Status.REJECTED):
         raise DomainValidationError("Entry decision must be accepted or rejected")
     with transaction.atomic():

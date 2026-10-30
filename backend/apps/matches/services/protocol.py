@@ -6,14 +6,14 @@ from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
 
-from apps.matches.models import Match, MatchEvent
-from apps.teams.models import EntryPlayer
-from config.domain_errors import (
+from apps.common.errors import (
     ConflictError,
     DomainValidationError,
     NotFoundError,
     ResourceLockedError,
 )
+from apps.matches.models import Match, MatchEvent
+from apps.teams.models import EntryPlayer
 
 # Срок жизни аренды матча и поля строки Match, в которых она хранится.
 MATCH_LEASE_SECONDS = 90

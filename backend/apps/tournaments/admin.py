@@ -12,7 +12,7 @@ from apps.tournaments.models import (
 
 
 class TournamentMemberInline(admin.TabularInline):
-    """Keeps tournament-scoped organizer assignments with the tournament."""
+    """Сохраняет привязку организаторов к конкретному турниру."""
 
     model = TournamentMember
     extra = 0

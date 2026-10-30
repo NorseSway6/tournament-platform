@@ -10,7 +10,7 @@ from apps.tournaments.models import Tournament, TournamentMember
 
 
 def get_me(user_id: int) -> dict:
-    """Builds the authenticated user's role contexts from domain-owned relations."""
+    """Формирует контексты ролей для аутентифицированного пользователя."""
     user = User.objects.get(pk=user_id)
     is_admin = user.is_superuser or user.is_platform_admin
 

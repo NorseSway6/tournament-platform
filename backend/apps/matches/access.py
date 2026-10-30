@@ -8,7 +8,7 @@ from apps.tournaments.access import has_tournament_access, tournament_organizer_
 
 
 def _has_judge_role(request: HttpRequest, user) -> bool:
-    """Checks whether the user is assigned to at least one match."""
+    """Проверяет, назначен ли пользователь хотя бы на один матч."""
     return is_platform_admin(user) or MatchOfficial.objects.filter(official=user).exists()
 
 
@@ -20,7 +20,7 @@ organizer_auth = tournament_organizer_auth
 
 
 def require_judge_match(request: HttpRequest, match_id: int) -> None:
-    """Requires an official assignment for the requested match."""
+    """Требуется официальное назначение на запрашиваемый матч."""
     match = Match.objects.filter(pk=match_id).only("id").first()
     if match is None:
         raise HttpError(404, "Match not found")
@@ -33,7 +33,7 @@ def require_judge_match(request: HttpRequest, match_id: int) -> None:
 
 
 def require_lease_takeover(request: HttpRequest, match_id: int) -> None:
-    """Allows takeover only to the main referee or a tournament organizer."""
+    """Перехват управления разрешён только главному судье или организатору турнира."""
     match = Match.objects.select_related("tournament").filter(pk=match_id).first()
     if match is None:
         raise HttpError(404, "Match not found")
@@ -52,7 +52,7 @@ def require_lease_takeover(request: HttpRequest, match_id: int) -> None:
 
 
 def require_organizer_match(request: HttpRequest, match_id: int) -> None:
-    """Checks organizer permission inherited from the match's tournament."""
+    """Проверяет разрешение организатора, унаследованное от турнира, к которому относится матч."""
     match = Match.objects.select_related("tournament").filter(pk=match_id).first()
     if match is None:
         raise HttpError(404, "Match not found")

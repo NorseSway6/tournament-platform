@@ -6,12 +6,12 @@ from apps.organizations.models import Organization, OrganizationMember
 
 
 def is_platform_admin(user) -> bool:
-    """Returns whether the account has platform-wide administrative access."""
+    """Возвращает информацию о том, имеет ли учетная запись административный доступ."""
     return bool(user and (user.is_superuser or user.is_platform_admin))
 
 
 def _has_organization_role(request: HttpRequest, user) -> bool:
-    """Checks whether the user has at least one organization scope."""
+    """Проверяет, есть ли у пользователя хотя бы одна область действия, связанная с организацией."""
     return (
         is_platform_admin(user)
         or OrganizationMember.objects.filter(
@@ -27,7 +27,7 @@ organization_organizer_auth = AccessTokenAuth(
 
 
 def require_organizer_organization(request: HttpRequest, organization_id: int) -> None:
-    """Checks organization scope for organization-level settings and resources."""
+    """Проверяет область действия организации на предмет настроек и ресурсов уровня организации."""
     user = request.auth
     if is_platform_admin(user):
         return
@@ -43,5 +43,5 @@ def require_organizer_organization(request: HttpRequest, organization_id: int) -
 
 
 def require_organizer_organization_access(request: HttpRequest, organization_id: int) -> None:
-    """Checks that the caller has a direct organizer membership in an organization."""
+    """Проверяет, имеет ли вызывающий членство в организации в качестве организатора."""
     require_organizer_organization(request, organization_id)

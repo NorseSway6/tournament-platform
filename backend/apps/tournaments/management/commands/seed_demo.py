@@ -255,7 +255,9 @@ class Command(BaseCommand):
                     entry_player=entry_player,
                     number_snapshot=entry_player.number,
                     is_starter=True,
-                    role=MatchLineupPlayer.Role.CAPTAIN if index == 0 else MatchLineupPlayer.Role.PLAYER,
+                    role=MatchLineupPlayer.Role.CAPTAIN
+                    if index == 0
+                    else MatchLineupPlayer.Role.PLAYER,
                 )
 
     def _play(self, match, referee, events, finish=True):

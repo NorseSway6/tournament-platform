@@ -1,6 +1,7 @@
 from django.http import HttpRequest
 from ninja import Router
 
+from apps.common.api_errors import api_response
 from apps.identity_access.api.dependencies import (
     access_token_auth,
     request_user_id,
@@ -20,7 +21,6 @@ from apps.identity_access.services import (
     revoke_refresh_token,
 )
 from apps.role_assignment import get_me as get_user_context
-from config.api_errors import api_response
 
 router = Router(tags=["Identity"])
 

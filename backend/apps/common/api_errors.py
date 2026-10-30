@@ -6,7 +6,7 @@ from django.http import Http404, HttpRequest, HttpResponse
 from ninja import Schema
 from ninja.errors import AuthenticationError, HttpError, ValidationError
 
-from config.domain_errors import DomainError, error_code_for_status
+from apps.common.errors import DomainError, error_code_for_status
 
 logger = logging.getLogger(__name__)
 

@@ -225,7 +225,8 @@ class PlatformUserAdmin(UserRoleAssignmentAdminMixin, UserAdmin):
             },
         ),
     )
-    fieldsets = _user_fieldsets_without_staff() + (
+    fieldsets = (
+        *_user_fieldsets_without_staff(),
         (
             "Football Platform",
             {"fields": ("display_name", "phone", "telegram_id", "telegram_username")},

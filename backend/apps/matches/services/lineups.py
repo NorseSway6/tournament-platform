@@ -1,13 +1,13 @@
 from django.db import transaction
 
-from apps.matches.models import Match, MatchLineup, MatchLineupPlayer
-from apps.teams.models import EntryPlayer, TournamentEntry
-from config.domain_errors import (
+from apps.common.errors import (
     ConflictError,
     DomainValidationError,
     ForbiddenError,
     NotFoundError,
 )
+from apps.matches.models import Match, MatchLineup, MatchLineupPlayer
+from apps.teams.models import EntryPlayer, TournamentEntry
 
 
 def captain_entry_for_match(match_id: int, captain_id: int) -> tuple[Match, TournamentEntry]:

@@ -9,8 +9,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.common.errors import ConflictError, DomainValidationError, UnauthorizedError
 from apps.identity_access.models import TokenSession, User
-from config.domain_errors import ConflictError, DomainValidationError, UnauthorizedError
 
 ACCESS_TOKEN_SALT = "football-platform.access"
 ACCESS_TOKEN_TTL_SECONDS = 15 * 60

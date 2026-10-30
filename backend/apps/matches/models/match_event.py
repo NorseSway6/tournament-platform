@@ -125,6 +125,10 @@ class MatchEvent(models.Model):
             ),
         ]
 
+    def __str__(self) -> str:
+        """Показывает номер события и его тип."""
+        return f"{self.match_id}:{self.seq} {self.type}"
+
     def clean(self):
         """Проверяет принадлежность события матчу, команде и игроку."""
         if self.target_event_id and self.match_id and self.target_event.match_id != self.match_id:
@@ -141,7 +145,3 @@ class MatchEvent(models.Model):
             raise ValidationError(
                 {"related_player": "Related player must belong to the selected entry."}
             )
-
-    def __str__(self) -> str:
-        """Показывает номер события и его тип."""
-        return f"{self.match_id}:{self.seq} {self.type}"

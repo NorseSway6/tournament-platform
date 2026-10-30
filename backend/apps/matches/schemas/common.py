@@ -29,7 +29,7 @@ class TournamentSummary(Schema):
 
     @staticmethod
     def resolve_timezone(tournament) -> str:
-        """Returns the timezone configured for the tournament's organization."""
+        """Возвращает часовой пояс, настроенный для организации, проводящей турнир."""
         return tournament.organization.timezone
 
 

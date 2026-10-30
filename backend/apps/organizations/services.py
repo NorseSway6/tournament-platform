@@ -2,9 +2,9 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 
+from apps.common.errors import ConflictError, DomainValidationError, NotFoundError
 from apps.identity_access.selectors import get_active_user_by_identifier
 from apps.organizations.models import Organization, OrganizationMember
-from config.domain_errors import ConflictError, DomainValidationError, NotFoundError
 
 
 def create_organization(data: dict, creator_id: int) -> Organization:

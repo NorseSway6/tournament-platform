@@ -9,7 +9,7 @@ from apps.identity_access.services import user_from_access_token
 
 
 class AccessTokenAuth(HttpBearer):
-    """Validates one bearer token scheme with an optional domain permission check."""
+    """Выполняет проверку bearer token с возможностью дополнительной проверки доменных прав доступа."""
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ access_token_auth = AccessTokenAuth()
 
 
 def request_user_id(request: HttpRequest) -> int:
-    """Returns the authenticated user's id attached by bearer authentication."""
+    """Возвращает идентификатор аутентифицированного пользователя, полученный посредством bearer-аутентификации."""
     user = getattr(request, "auth", None)
     if user is None or not getattr(user, "is_authenticated", False):
         raise HttpError(401, "A valid Bearer access token is required")

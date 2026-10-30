@@ -26,6 +26,10 @@ class MatchLineup(models.Model):
             ),
         ]
 
+    def __str__(self) -> str:
+        """Возвращает краткое описание заявки на состав."""
+        return f"Lineup for match {self.match_id}, entry {self.entry_id}"
+
     def clean(self):
         """Проверяет, что заявка принадлежит участнику конкретного матча."""
         if self.match_id and self.entry_id:
@@ -33,10 +37,6 @@ class MatchLineup(models.Model):
                 raise ValidationError({"entry": "Entry must belong to the match tournament."})
             if self.entry_id not in (self.match.home_entry_id, self.match.away_entry_id):
                 raise ValidationError({"entry": "Entry must be one of the match participants."})
-
-    def __str__(self) -> str:
-        """Возвращает краткое описание заявки на состав."""
-        return f"Lineup for match {self.match_id}, entry {self.entry_id}"
 
 
 class MatchLineupPlayer(models.Model):
@@ -70,6 +70,10 @@ class MatchLineupPlayer(models.Model):
             ),
         ]
 
+    def __str__(self) -> str:
+        """Показывает игрока в контексте заявки на состав."""
+        return f"{self.lineup_id}: {self.entry_player}"
+
     def clean(self):
         """Проверяет, что игрок входит в состав заявки на матч."""
         if (
@@ -78,7 +82,3 @@ class MatchLineupPlayer(models.Model):
             and self.entry_player.entry_id != self.lineup.entry_id
         ):
             raise ValidationError({"entry_player": "Player must belong to the lineup entry."})
-
-    def __str__(self) -> str:
-        """Показывает игрока в контексте заявки на состав."""
-        return f"{self.lineup_id}: {self.entry_player}"

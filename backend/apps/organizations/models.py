@@ -32,7 +32,7 @@ class Organization(models.Model):
 
 
 class OrganizationMember(models.Model):
-    """User membership and organization-scoped permissions."""
+    """Членство пользователей и разрешения, действующие в рамках организации."""
 
     class Role(models.TextChoices):
         ORGANIZER = "organizer", "Organizer"
@@ -55,5 +55,5 @@ class OrganizationMember(models.Model):
         indexes = [models.Index(fields=["user", "role"], name="org_member_user_role_idx")]
 
     def __str__(self) -> str:
-        """Describes the user's role within the organization."""
+        """Описывает роль пользователя в организации."""
         return f"{self.user} — {self.role} ({self.organization})"

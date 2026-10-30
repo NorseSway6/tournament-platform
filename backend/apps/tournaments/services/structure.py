@@ -1,15 +1,15 @@
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 
+from apps.common.errors import ConflictError, DomainValidationError, NotFoundError
 from apps.teams.models import TournamentEntry
 from apps.tournaments.models import Group, GroupEntry, Round, Stage
-from config.domain_errors import ConflictError, DomainValidationError, NotFoundError
 
 from .tournaments import _organizer_tournament, get_organizer_tournament
 
 
 def _organizer_stage(stage_id: int) -> Stage:
-    """Loads a stage by its unique ID without requiring its parent ID in the URL."""
+    """Загружает этап по его ID, указывать родительское ID в URL при этом не требуется."""
     stage = Stage.objects.filter(pk=stage_id).first()
     if stage is None:
         raise NotFoundError("Stage not found")
@@ -17,13 +17,13 @@ def _organizer_stage(stage_id: int) -> Stage:
 
 
 def list_organizer_stages(tournament_id: int) -> list[Stage]:
-    """Returns ordered stages of an organizer-owned tournament."""
+    """Возвращает упорядоченные этапы турнира, принадлежащего организатору."""
     tournament = get_organizer_tournament(tournament_id)
     return list(tournament.stages.order_by("ord", "id"))
 
 
 def create_organizer_stage(tournament_id: int, data: dict) -> Stage:
-    """Creates a stage in an organizer-owned tournament."""
+    """Создаёт этап в турнире, принадлежащем организатору."""
     tournament = _organizer_tournament(tournament_id)
     try:
         return Stage.objects.create(tournament=tournament, **data)
@@ -32,7 +32,7 @@ def create_organizer_stage(tournament_id: int, data: dict) -> Stage:
 
 
 def update_organizer_stage(stage_id: int, data: dict) -> Stage:
-    """Updates stage name, kind and order."""
+    """Обновляет название этапа, его тип и порядок."""
     if not data:
         raise DomainValidationError("At least one field must be provided")
     stage = _organizer_stage(stage_id)
@@ -46,7 +46,7 @@ def update_organizer_stage(stage_id: int, data: dict) -> Stage:
 
 
 def delete_organizer_stage(stage_id: int) -> None:
-    """Deletes a stage unless matches depend on it."""
+    """Удаляет этап, если только от него не зависят какие-либо сопоставления."""
     stage = _organizer_stage(stage_id)
     try:
         stage.delete()
@@ -57,7 +57,7 @@ def delete_organizer_stage(stage_id: int) -> None:
 
 
 def list_organizer_groups(stage_id: int) -> list[Group]:
-    """Returns groups for a group-format stage."""
+    """Возвращает группы для этапа в групповом формате."""
     stage = _organizer_stage(stage_id)
     if stage.kind != Stage.Kind.GROUPS:
         raise ConflictError("Groups can only be managed in a groups stage", code="not_groups_stage")
@@ -65,7 +65,7 @@ def list_organizer_groups(stage_id: int) -> list[Group]:
 
 
 def create_organizer_group(stage_id: int, data: dict) -> Group:
-    """Creates a uniquely ordered group in a groups stage."""
+    """Создаёт в рамках группового этапа группу с уникальным порядком элементов."""
     stage = _organizer_stage(stage_id)
     if stage.kind != Stage.Kind.GROUPS:
         raise ConflictError("Groups can only be managed in a groups stage", code="not_groups_stage")
@@ -78,7 +78,7 @@ def create_organizer_group(stage_id: int, data: dict) -> Group:
 
 
 def _organizer_group(group_id: int) -> Group:
-    """Loads a group by its unique ID."""
+    """Загружает группу по её ID."""
     group = Group.objects.filter(pk=group_id).first()
     if group is None:
         raise NotFoundError("Group not found")
@@ -86,7 +86,7 @@ def _organizer_group(group_id: int) -> Group:
 
 
 def update_organizer_group(group_id: int, data: dict) -> Group:
-    """Updates a group's name or order."""
+    """Обновляет название или порядок группы."""
     if not data:
         raise DomainValidationError("At least one field must be provided")
     group = _organizer_group(group_id)
@@ -102,7 +102,7 @@ def update_organizer_group(group_id: int, data: dict) -> Group:
 
 
 def delete_organizer_group(group_id: int) -> None:
-    """Deletes a group unless matches depend on it."""
+    """Удаляет группу, если только от неё не зависят какие-либо сопоставления."""
     group = _organizer_group(group_id)
     try:
         group.delete()
@@ -113,7 +113,7 @@ def delete_organizer_group(group_id: int) -> None:
 
 
 def list_organizer_group_entries(group_id: int) -> list[GroupEntry]:
-    """Returns explicitly assigned accepted entries for a group."""
+    """Возвращает явно назначенные принятые записи для группы."""
     group = _organizer_group(group_id)
     if group.stage.kind != Stage.Kind.GROUPS:
         raise ConflictError("Groups can only be managed in a groups stage", code="not_groups_stage")
@@ -125,7 +125,7 @@ def list_organizer_group_entries(group_id: int) -> list[GroupEntry]:
 
 
 def replace_organizer_group_entries(group_id: int, entry_ids: list[int]) -> list[GroupEntry]:
-    """Replaces all group assignments after validating entries and the stage."""
+    """Заменяет все назначения групп после проверки записей и этапа."""
     group = _organizer_group(group_id)
     if group.stage.kind != Stage.Kind.GROUPS:
         raise ConflictError("Groups can only be managed in a groups stage", code="not_groups_stage")
@@ -160,12 +160,12 @@ def replace_organizer_group_entries(group_id: int, entry_ids: list[int]) -> list
 
 
 def list_organizer_rounds(stage_id: int) -> list[Round]:
-    """Returns ordered rounds for a stage."""
+    """Возвращает упорядоченные раунды для этапа."""
     return list(_organizer_stage(stage_id).rounds.order_by("ord", "id"))
 
 
 def create_organizer_round(stage_id: int, data: dict) -> Round:
-    """Creates a round in a stage."""
+    """Создаёт раунд в этапе."""
     stage = _organizer_stage(stage_id)
     try:
         return Round.objects.create(stage=stage, **data)
@@ -174,7 +174,7 @@ def create_organizer_round(stage_id: int, data: dict) -> Round:
 
 
 def _organizer_round(round_id: int) -> Round:
-    """Loads a round by its unique ID."""
+    """Загружает раунд по его уникальному ID."""
     round_obj = Round.objects.filter(pk=round_id).first()
     if round_obj is None:
         raise NotFoundError("Round not found")
@@ -182,7 +182,7 @@ def _organizer_round(round_id: int) -> Round:
 
 
 def update_organizer_round(round_id: int, data: dict) -> Round:
-    """Updates a round's name or order."""
+    """Обновляет название или порядок раунда."""
     if not data:
         raise DomainValidationError("At least one field must be provided")
     round_obj = _organizer_round(round_id)
@@ -196,7 +196,7 @@ def update_organizer_round(round_id: int, data: dict) -> Round:
 
 
 def delete_organizer_round(round_id: int) -> None:
-    """Deletes a round unless matches depend on it."""
+    """Удаляет раунд, если от него не зависят матчи."""
     round_obj = _organizer_round(round_id)
     try:
         round_obj.delete()

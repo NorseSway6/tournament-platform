@@ -4,7 +4,7 @@ from apps.organizations.models import Organization, OrganizationMember
 
 
 class OrganizationMemberInline(admin.TabularInline):
-    """Keeps organization-scoped organizer assignments with the organization."""
+    """Сохраняет назначения организаторов, относящиеся к уровню организации, за самой организацией."""
 
     model = OrganizationMember
     extra = 0

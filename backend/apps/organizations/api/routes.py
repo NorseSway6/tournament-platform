@@ -2,6 +2,7 @@ from django.http import HttpRequest
 from ninja import Router
 from ninja.errors import HttpError
 
+from apps.common.api_errors import api_response
 from apps.identity_access.api.dependencies import (
     access_token_auth,
     request_user_id,
@@ -31,7 +32,6 @@ from apps.organizations.services import (
     remove_organization_member,
     update_organization,
 )
-from config.api_errors import api_response
 
 router = Router(tags=["Organizer — organizations"], auth=organization_organizer_auth)
 public_router = Router(tags=["Organizations"])

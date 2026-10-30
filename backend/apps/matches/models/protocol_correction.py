@@ -2,7 +2,7 @@ from django.db import models
 
 
 class ProtocolCorrectionAudit(models.Model):
-    """Stores the reason and immutable event links for an organizer correction."""
+    """Сохраняет причину и неизменяемые ссылки на события для исправления, внесённого организатором."""
 
     match = models.ForeignKey(
         "matches.Match", on_delete=models.PROTECT, related_name="correction_audits"
@@ -31,5 +31,5 @@ class ProtocolCorrectionAudit(models.Model):
         ordering = ["created_at", "id"]
 
     def __str__(self) -> str:
-        """Describes the corrected protocol event."""
+        """Описывает исправленное событие протокола."""
         return f"Correction for event {self.target_event_id} in match {self.match_id}"

@@ -12,20 +12,19 @@ piplock:
 	sudo chown -R $(USER) Pipfile.lock
 
 lint:
-	$(RUN) ruff check .
+	$(RUN) ruff check ./backend
 
 lint-fix:
-	$(RUN) ruff check . --fix
+	$(RUN) ruff check ./backend --fix
 
 format:
-	$(RUN) ruff format .
+	$(RUN) ruff format ./backend
 
 format-check:
-	$(RUN) ruff format --check .
+	$(RUN) ruff format --check ./backend
 
 makemigrations:
-	docker compose exec -T backend python manage.py makemigrations
-	sudo chown -R $USER:$(id -gn $USER) backend/src/app/migrations/
+	docker compose exec --user "$(id -u):$(id -g)" backend python manage.py makemigrations
 
 migrate:
 	docker compose exec -T backend python manage.py migrate

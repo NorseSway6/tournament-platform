@@ -2,8 +2,10 @@ from django.http import HttpRequest
 from ninja import Router
 from ninja.errors import HttpError
 
+from apps.common.api_errors import api_response
 from apps.identity_access.api.dependencies import access_token_auth, request_user_id
 from apps.teams.access import captain_auth
+from apps.teams.api.entries import router as entries_router
 from apps.teams.schemas.captain import (
     CaptainTeamCreateIn,
     CaptainTeamOut,
@@ -33,9 +35,9 @@ from apps.teams.services.entries import (
 )
 from apps.teams.services.organizer import decide_organizer_entry
 from apps.tournaments.access import tournament_organizer_auth as organizer_auth
-from config.api_errors import api_response
 
 router = Router(tags=["Teams and players"])
+router.add_router("", entries_router)
 captain_router = Router(tags=["Captain"], auth=captain_auth)
 organizer_router = Router(tags=["Organizer — entries"], auth=organizer_auth)
 

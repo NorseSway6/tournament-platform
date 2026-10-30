@@ -6,7 +6,7 @@ from apps.teams.models import Team
 
 
 def _has_captain_role(request: HttpRequest, user) -> bool:
-    """Checks whether the user captains at least one team."""
+    """Проверяет, является ли пользователь капитаном хотя бы одной команды."""
     return is_platform_admin(user) or Team.objects.filter(captain=user).exists()
 
 

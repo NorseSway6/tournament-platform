@@ -2,13 +2,13 @@ from django.http import HttpRequest
 from ninja import Router
 from ninja.errors import HttpError
 
+from apps.common.api_errors import api_response
 from apps.identity_access.api.dependencies import request_user_id
 from apps.teams.access import captain_auth
 from apps.teams.schemas.captain import CaptainEntryOut, EntryCreateIn
 from apps.teams.services.entries import create_captain_tournament_entry
 from apps.tournaments.schemas.public import PublicParticipantsOut
 from apps.tournaments.selectors import get_public_tournament
-from config.api_errors import api_response
 
 router = Router(tags=["Tournament entries"])
 

@@ -21,11 +21,11 @@ class Group(models.Model):
             ),
         ]
 
+    def __str__(self) -> str:
+        """Возвращает имя группы для админки и журналов."""
+        return self.name
+
     def clean(self) -> None:
         """Группы допускаются только внутри этапа группового формата."""
         if self.stage_id and self.stage.kind != Stage.Kind.GROUPS:
             raise ValidationError({"stage": "Groups can only belong to a groups stage."})
-
-    def __str__(self) -> str:
-        """Возвращает имя группы для админки и журналов."""
-        return self.name

@@ -22,7 +22,7 @@ make createsuperuser
 4. Заполнить БД данными для упрощения проверки эндпоинтов (необязательно):
 
 ```
-cd backend && python manage.py seed_demo
+docker compose exec backend python manage.py seed_demo
 ```
 
 API: `http://localhost:8000/api/v1/`
