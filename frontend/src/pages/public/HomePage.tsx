@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { publicApi } from "../../api/endpoints";
 import type { TournamentStatus } from "../../api/types";
 import { MatchRow } from "../../components/match";
@@ -18,8 +18,20 @@ const ORDER: Record<string, number> = { ongoing: 0, registration: 1, finished: 2
 
 export function HomePage() {
   const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const tournaments = useQuery({ queryKey: ["tournaments"], queryFn: () => publicApi.tournaments() });
+
+  // Поиск по названию выполняет сервер; запрос уходит через 300 мс после ввода.
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const tournaments = useQuery({
+    queryKey: ["tournaments", { search: query }],
+    queryFn: () => publicApi.tournaments(undefined, query),
+    placeholderData: keepPreviousData,
+  });
   const today = useQuery({
     queryKey: ["today"],
     queryFn: () => publicApi.today(DEFAULT_TZ),
@@ -27,23 +39,15 @@ export function HomePage() {
   });
 
   const list = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return (tournaments.data ?? [])
       .filter((t) => filter === "all" || t.status === filter)
-      .filter(
-        (t) =>
-          !q ||
-          t.name.toLowerCase().includes(q) ||
-          t.organization.name.toLowerCase().includes(q) ||
-          t.season.toLowerCase().includes(q),
-      )
       .sort(
         (a, b) =>
           (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9) ||
           (b.starts_on ?? "").localeCompare(a.starts_on ?? "") ||
           a.name.localeCompare(b.name, "ru"),
       );
-  }, [tournaments.data, search, filter]);
+  }, [tournaments.data, filter]);
 
   return (
     <>
@@ -117,7 +121,7 @@ export function HomePage() {
                 </div>
               ) : (
                 <Empty>
-                  {search ? `По запросу «${search}» ничего не найдено` : "Турниров пока нет"}
+                  {query ? `По запросу «${query}» ничего не найдено` : "Турниров пока нет"}
                 </Empty>
               )
             }

@@ -198,12 +198,6 @@ export function ProtocolPage() {
     return (
       <div className="container page stack">
         <ErrorBox error={match.error} onRetry={() => match.refetch()} />
-        {match.error instanceof ApiError && match.error.status === 404 && (
-          <div className="alert">
-            Бэкенд пока отдаёт карточку матча только для публичных турниров. Для закрытого турнира
-            протокол откроется, когда бэкенд добавит доступ судье.
-          </div>
-        )}
       </div>
     );
 
@@ -421,17 +415,16 @@ function PickModal({
   busy: boolean;
   minute: number;
   onPickTeam: (entryId: number | null) => void;
-  onPick: (entryPlayerId: number | null) => void;
+  onPick: (entryPlayerId: number) => void;
   onClose: () => void;
   error: unknown;
 }) {
   const label = EVENT_LABEL[picking.type] ?? picking.type;
   const teams = [match.home_entry, match.away_entry].filter(Boolean) as NonNullable<MatchDetail["home_entry"]>[];
-  const players =
-    lineups?.items
-      .find((i) => i.entry_id === picking.entryId)
-      ?.players.slice()
-      .sort((a, b) => a.number - b.number) ?? [];
+  const team = lineups?.items.find((i) => i.entry_id === picking.entryId);
+  const players = team?.players.slice().sort((a, b) => a.number - b.number) ?? [];
+  // Если капитан не подал заявку на матч, бэкенд отдаёт весь состав команды в турнире.
+  const fromRoster = team && team.status === null;
 
   return (
     <Modal title={`${label} · ${minute}-я минута`} onClose={onClose}>
@@ -452,6 +445,9 @@ function PickModal({
               ← Команда
             </button>
           </div>
+          {fromRoster && players.length > 0 && (
+            <div className="hint">Заявки на матч нет — показан весь состав команды в турнире.</div>
+          )}
           {players.length ? (
             <div className="choice-list">
               {players.map((p) => (
@@ -471,13 +467,10 @@ function PickModal({
             </div>
           ) : (
             <div className="alert alert-warn small">
-              Капитан не подал заявку на матч, поэтому список игроков пуст. Событие можно записать без
-              игрока.
+              В составе команды нет игроков, поэтому событие записать нельзя. Капитану нужно добавить
+              игроков в заявку на турнир.
             </div>
           )}
-          <button className="btn btn-outline" disabled={busy} onClick={() => onPick(null)}>
-            Без указания игрока
-          </button>
           <FormError error={error} />
         </div>
       )}
@@ -494,11 +487,16 @@ function LineupSummary({ lineups, error }: { lineups: JudgeLineups | undefined; 
         Заявки команд на матч
       </div>
       {lineups.items.map((l) => (
-        <div key={l.entry_id} className="row-between">
-          <span className="bold">{l.team_name}</span>
-          <span className="muted small">
-            {l.players.length ? `${l.players.length} игроков` : "заявки нет"}
-          </span>
+        <div key={l.entry_id} className="stack-sm" style={{ gap: 2 }}>
+          <div className="row-between">
+            <span className="bold">{l.team_name}</span>
+            <span className="muted small">
+              {l.status === null
+                ? `заявки нет · в составе ${l.players.length}`
+                : `в заявке ${l.players.length} игроков`}
+            </span>
+          </div>
+          {l.comment && <span className="small muted">💬 {l.comment}</span>}
         </div>
       ))}
     </div>

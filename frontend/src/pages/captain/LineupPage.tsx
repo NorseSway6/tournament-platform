@@ -23,12 +23,14 @@ export function LineupPage() {
 
   const [selected, setSelected] = useState<Set<number> | null>(null);
   const [captainId, setCaptainId] = useState<number | null>(null);
+  const [comment, setComment] = useState("");
 
   useEffect(() => {
     if (lineup.data && selected === null) {
       const sel = lineup.data.players.filter((p) => p.selected);
       setSelected(new Set(sel.map((p) => p.entry_player_id)));
       setCaptainId(sel.find((p) => p.role === "captain")?.entry_player_id ?? null);
+      setComment(lineup.data.comment ?? "");
     }
   }, [lineup.data, selected]);
 
@@ -41,6 +43,7 @@ export function LineupPage() {
           is_starter: true,
           role: id === captainId ? "captain" : "player",
         })),
+        comment: comment.trim(),
       });
       return captainApi.submitLineup(matchId);
     },
@@ -154,6 +157,24 @@ export function LineupPage() {
             В составе команды нет игроков. Добавьте их на странице «Состав» в кабинете капитана.
           </div>
         )}
+      </section>
+
+      <section className="card stack-sm">
+        <div className="field">
+          <label htmlFor="lineup-comment">Комментарий к заявке</label>
+          {editable ? (
+            <textarea
+              id="lineup-comment"
+              className="textarea"
+              maxLength={2000}
+              placeholder="Например: опоздает Петров, играем в синей форме"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+            />
+          ) : (
+            <div>{comment || <span className="muted">Без комментария</span>}</div>
+          )}
+        </div>
       </section>
 
       {editable && (

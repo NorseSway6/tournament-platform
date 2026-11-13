@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ROLE_HOME, ROLE_LABEL, useAuth } from "../auth/AuthContext";
+import type { Role } from "../auth/AuthContext";
+
+const NAV_ROLES: Role[] = ["organizer", "captain", "judge"];
 
 function LogoMark() {
   return (
@@ -44,7 +47,9 @@ export function Layout() {
             <NavLink to="/" end>
               Турниры
             </NavLink>
-            {roles.map((r) => (
+            {/* Стать капитаном или организатором может любой вошедший пользователь,
+                раздел судьи появляется после назначения организатором. */}
+            {(loggedIn ? NAV_ROLES.filter((r) => r !== "judge" || roles.includes(r)) : []).map((r) => (
               <NavLink key={r} to={ROLE_HOME[r]}>
                 {ROLE_LABEL[r]}
               </NavLink>

@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError } from "../../api/client";
-import { organizerApi, publicApi } from "../../api/endpoints";
+import { organizerApi } from "../../api/endpoints";
 import type { OrganizerEntry, OrganizerTournament } from "../../api/types";
 import { useAuth } from "../../auth/AuthContext";
 import { MatchDayList } from "../../components/match";
@@ -328,11 +327,9 @@ function EntriesTab({ entries, tournament }: { entries: OrganizerEntry[]; tourna
 
 function MatchesTab({ tournament, accepted }: { tournament: OrganizerTournament; accepted: OrganizerEntry[] }) {
   const [creating, setCreating] = useState(false);
-  const isPublicVisible = tournament.visibility === "public" && tournament.status !== "draft";
   const matches = useQuery({
-    queryKey: ["tournament", tournament.id, "matches"],
-    queryFn: () => publicApi.matches(tournament.id),
-    enabled: isPublicVisible,
+    queryKey: ["tournament", tournament.id, "matches", "organizer"],
+    queryFn: () => organizerApi.matches(tournament.id),
     refetchInterval: 20_000,
   });
 
@@ -349,20 +346,9 @@ function MatchesTab({ tournament, accepted }: { tournament: OrganizerTournament;
       {accepted.length < 2 && (
         <div className="alert alert-warn">Чтобы создать матч, нужно принять хотя бы две команды.</div>
       )}
-      {!isPublicVisible ? (
-        <div className="alert">
-          Список матчей пока недоступен: бэкенд показывает матчи только публичных турниров с открытой
-          регистрацией. Созданные матчи сохраняются и появятся здесь после открытия регистрации.
-        </div>
-      ) : matches.error instanceof ApiError && matches.error.status === 404 ? (
-        <div className="alert">Список матчей недоступен для этого турнира.</div>
-      ) : (
-        <QueryView query={matches}>
-          {(data) => (
-            <MatchDayList matches={data} emptyText="Матчей пока нет. Создайте первый матч." />
-          )}
-        </QueryView>
-      )}
+      <QueryView query={matches}>
+        {(data) => <MatchDayList matches={data} emptyText="Матчей пока нет. Создайте первый матч." />}
+      </QueryView>
       {creating && (
         <CreateMatchModal tournament={tournament} accepted={accepted} onClose={() => setCreating(false)} />
       )}

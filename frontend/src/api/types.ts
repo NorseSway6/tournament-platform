@@ -398,6 +398,7 @@ export interface MatchLineup {
   entry_id: number;
   lineup_id: number | null;
   status: LineupStatus;
+  comment: string;
   players: {
     entry_player_id: number;
     player_id: number;
@@ -412,6 +413,7 @@ export interface MatchLineup {
 }
 export interface LineupUpdateIn {
   players: { entry_player_id: number; is_starter?: boolean; role?: LineupRole }[];
+  comment?: string;
 }
 export interface LineupCheck {
   lineup_id: number;
@@ -433,7 +435,9 @@ export interface JudgeLineups {
     team_id: number;
     team_name: string;
     lineup_id: number | null;
+    /** null — заявки на матч нет, в players тогда весь состав команды в турнире. */
     status: LineupStatus | null;
+    comment: string;
     reject_reason: string;
     players: {
       entry_player_id: number;

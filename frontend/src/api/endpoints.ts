@@ -57,18 +57,22 @@ export const authApi = {
 
 // ---------- Публичная часть ----------
 /** Загружает все страницы списка (бэкенд отдаёт максимум 100 за раз). */
-async function fetchAllPages<T>(path: string, query: Record<string, string | number | undefined>) {
+async function fetchAllPages<T>(
+  path: string,
+  query: Record<string, string | number | undefined>,
+  auth = false,
+) {
   const pageSize = 100;
   const first = await request<Paged<T>>(path, {
     query: { ...query, page: 1, page_size: pageSize },
-    auth: false,
+    auth,
   });
   const items = [...first.items];
   const pages = Math.ceil(first.total / pageSize);
   for (let page = 2; page <= pages; page++) {
     const next = await request<Paged<T>>(path, {
       query: { ...query, page, page_size: pageSize },
-      auth: false,
+      auth,
     });
     items.push(...next.items);
   }
@@ -76,15 +80,18 @@ async function fetchAllPages<T>(path: string, query: Record<string, string | num
 }
 
 export const publicApi = {
-  tournaments: (status?: Exclude<TournamentStatus, "draft">) =>
-    fetchAllPages<Tournament>("/tournaments", { status }),
+  /** Публичные турниры; search — поиск по названию на сервере. */
+  tournaments: (status?: Exclude<TournamentStatus, "draft">, search?: string) =>
+    fetchAllPages<Tournament>("/tournaments", { status, search: search?.trim() || undefined }),
   tournament: (id: number) => request<Tournament>(`/tournaments/${id}`, { auth: false }),
   standings: (id: number) => request<Standings>(`/tournaments/${id}/standings`, { auth: false }),
   teams: (id: number) =>
     request<ListOut<TeamOut>>(`/tournaments/${id}/entries`, { auth: false }),
   matches: (id: number, params: { team?: number; status?: MatchStatus } = {}) =>
     fetchAllPages<Match>(`/tournaments/${id}/matches`, params),
-  match: (id: number) => request<MatchDetail>(`/matches/${id}`, { auth: false }),
+  /** Карточка матча. Токен передаётся, если пользователь вошёл: так судья и
+   *  организатор видят матчи и закрытых турниров. */
+  match: (id: number) => request<MatchDetail>(`/matches/${id}`),
   team: (id: number) => request<PublicTeam>(`/teams/${id}`, { auth: false }),
   today: (timezone?: string) =>
     request<TodayOut>("/today", { query: { timezone }, auth: false }),
@@ -131,6 +138,9 @@ export const organizerApi = {
   judges: (orgId: number) =>
     request<ListOut<JudgeOption>>(`/organizer/organizations/${orgId}/judges`),
 
+  /** Все матчи турнира, включая черновики и закрытые турниры. */
+  matches: (tournamentId: number) =>
+    fetchAllPages<Match>(`/organizer/tournaments/${tournamentId}/matches`, {}, true),
   createMatch: (tournamentId: number, data: OrganizerMatchIn) =>
     request<OrganizerMatch>(`/organizer/tournaments/${tournamentId}/matches`, {
       method: "POST",
