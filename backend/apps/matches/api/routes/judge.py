@@ -21,17 +21,21 @@ from apps.matches.schemas.public import (
     MatchLeaseOut,
     MatchLeaseReleasedOut,
 )
-from apps.matches.selectors import matches_for_date, parse_timezone_name
+from apps.matches.selectors import (
+    assigned_match_ids,
+    matches_for_date,
+    parse_timezone_name,
+)
 from apps.matches.services.organizer import get_match_lineups_for_judge
 from apps.matches.services.protocol import (
     acquire_match_lease,
     append_match_events,
     confirm_match,
-    judge_match_ids,
     release_match_lease,
     renew_match_lease,
     takeover_match_lease,
 )
+from apps.organizations.access import is_platform_admin
 
 judge_router = Router(tags=["Judge"], auth=judge_auth)
 
@@ -61,9 +65,12 @@ def my_matches(
             match_date = date_type.fromisoformat(date)
         except ValueError as error:
             raise HttpError(422, "date must be 'today' or an ISO date (YYYY-MM-DD)") from error
+    match_ids = (
+        None if is_platform_admin(request.auth) else assigned_match_ids(request_user_id(request))
+    )
     matches = matches_for_date(
         match_date,
-        judge_match_ids(request_user_id(request)),
+        match_ids,
         timezone_name=timezone,
     )
     return {

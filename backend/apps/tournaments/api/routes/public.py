@@ -24,9 +24,10 @@ def list_tournaments(
     page_size: int = Query(20, ge=1, le=100),
     status: PublicTournamentStatus | None = None,
     league: StageKind | None = None,
+    search: str | None = Query(None, max_length=200),
 ):
-    """Возвращает страницу публичных турниров с фильтрами"""
-    queryset = public_tournaments(status=status, stage_kind=league)
+    """Возвращает страницу публичных турниров с фильтрами и поиском по названию"""
+    queryset = public_tournaments(status=status, stage_kind=league, search=search)
     return paginate(queryset, page, page_size)
 
 

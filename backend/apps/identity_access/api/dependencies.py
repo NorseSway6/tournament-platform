@@ -38,3 +38,12 @@ def request_user_id(request: HttpRequest) -> int:
     if user is None or not getattr(user, "is_authenticated", False):
         raise HttpError(401, "A valid Bearer access token is required")
     return user.pk
+
+
+def optional_access_token_user(request: HttpRequest):
+    """Возвращает пользователя по bearer-токену, если он передан и действителен."""
+    header = request.headers.get("Authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return user_from_access_token(token)

@@ -15,6 +15,7 @@ class MatchLineup(models.Model):
         "teams.TournamentEntry", on_delete=models.PROTECT, related_name="lineups"
     )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    comment = models.TextField(blank=True)
     reject_reason = models.TextField(blank=True)
 
     class Meta:

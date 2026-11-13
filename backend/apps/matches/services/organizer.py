@@ -17,11 +17,16 @@ from apps.matches.models import (
     Match,
     MatchEvent,
     MatchLineup,
+    MatchLineupPlayer,
     MatchOfficial,
     ProtocolCorrectionAudit,
     Venue,
 )
-from apps.matches.services.protocol import LEASE_FIELDS, calculate_match_score
+from apps.matches.services.protocol import (
+    LEASE_FIELDS,
+    calculate_match_score,
+    validate_player_event_fields,
+)
 from apps.teams.models import EntryPlayer, TournamentEntry
 from apps.tournaments.models import Group, Round, Stage, Tournament
 
@@ -119,8 +124,29 @@ def list_available_judges(organization_id: int) -> list[dict[str, Any]]:
     ]
 
 
+def _player_display_name(player) -> str:
+    """Собирает публичное имя игрока для протокола."""
+    return " ".join(
+        part for part in (player.last_name, player.first_name, player.middle_name) if part
+    )
+
+
+def _judge_player_payload(
+    entry_player, *, number: int, is_starter: bool, role: str
+) -> dict[str, Any]:
+    """Формирует игрока состава в едином формате для заявки и ростера."""
+    return {
+        "entry_player_id": entry_player.id,
+        "player_id": entry_player.player_id,
+        "name": _player_display_name(entry_player.player),
+        "number": number,
+        "is_starter": is_starter,
+        "role": role,
+    }
+
+
 def get_match_lineups_for_judge(match_id: int) -> dict[str, Any]:
-    """Returns both participant entries and their submitted match lineups."""
+    """Returns both participant entries and their lineups or tournament rosters."""
     match = (
         Match.objects.filter(pk=match_id)
         .select_related("home_entry__team", "away_entry__team")
@@ -139,26 +165,29 @@ def get_match_lineups_for_judge(match_id: int) -> dict[str, Any]:
         if entry is None:
             continue
         lineup = lineups.get(entry.id)
-        players = []
         if lineup is not None:
             players = [
-                {
-                    "entry_player_id": slot.entry_player_id,
-                    "player_id": slot.entry_player.player_id,
-                    "name": " ".join(
-                        part
-                        for part in (
-                            slot.entry_player.player.last_name,
-                            slot.entry_player.player.first_name,
-                            slot.entry_player.player.middle_name,
-                        )
-                        if part
-                    ),
-                    "number": slot.number_snapshot,
-                    "is_starter": slot.is_starter,
-                    "role": slot.role,
-                }
+                _judge_player_payload(
+                    slot.entry_player,
+                    number=slot.number_snapshot,
+                    is_starter=slot.is_starter,
+                    role=slot.role,
+                )
                 for slot in lineup.players.all().order_by("number_snapshot", "id")
+            ]
+        else:
+            players = [
+                _judge_player_payload(
+                    entry_player,
+                    number=entry_player.number,
+                    is_starter=False,
+                    role=MatchLineupPlayer.Role.PLAYER,
+                )
+                for entry_player in EntryPlayer.objects.filter(
+                    entry=entry, status=EntryPlayer.Status.ACTIVE
+                )
+                .select_related("player")
+                .order_by("number", "id")
             ]
         items.append(
             {
@@ -167,6 +196,7 @@ def get_match_lineups_for_judge(match_id: int) -> dict[str, Any]:
                 "team_name": entry.team.name,
                 "lineup_id": lineup.id if lineup else None,
                 "status": lineup.status if lineup else None,
+                "comment": lineup.comment if lineup else "",
                 "reject_reason": lineup.reject_reason if lineup else "",
                 "players": players,
             }
@@ -197,7 +227,7 @@ def _owned_match(match_id: int, *, lock: bool = False) -> Match:
     """Loads a match by ID; request identity scoping is pending authentication."""
     queryset = Match.objects.select_related("tournament", "stage", "round", "venue")
     if lock:
-        queryset = queryset.select_for_update()
+        queryset = queryset.select_for_update(of=("self",))
     match = queryset.filter(pk=match_id).first()
     if match is None:
         raise NotFoundError("Match not found")
@@ -315,6 +345,22 @@ def cancel_organizer_match(match_id: int) -> Match:
         match.status = Match.Status.CANCELLED
         _clear_match_lease(match)
         match.save(update_fields=["status", *LEASE_FIELDS])
+        return match
+
+
+def open_organizer_match_lineups(match_id: int) -> Match:
+    """Opens lineup submission for a scheduled or postponed match."""
+    with transaction.atomic():
+        match = _owned_match(match_id, lock=True)
+        if match.status == Match.Status.LINEUPS_OPEN:
+            return match
+        if match.status not in (Match.Status.SCHEDULED, Match.Status.POSTPONED):
+            raise ConflictError(
+                "Only scheduled or postponed matches can open lineups",
+                code="match_status_invalid",
+            )
+        match.status = Match.Status.LINEUPS_OPEN
+        match.save(update_fields=["status"])
         return match
 
 
@@ -517,11 +563,7 @@ def correct_organizer_match_event(
             participant_ids = {match.home_entry_id, match.away_entry_id}
             if entry_id is not None and entry_id not in participant_ids:
                 raise DomainValidationError("Event entry must be a match participant")
-            if (
-                replacement["type"] in (MatchEvent.Type.GOAL, MatchEvent.Type.OWN_GOAL)
-                and entry_id is None
-            ):
-                raise DomainValidationError("Goal events require entry_id")
+            validate_player_event_fields(replacement["type"], entry_id, player_id)
             if player_id is not None and (
                 entry_id is None
                 or not EntryPlayer.objects.filter(pk=player_id, entry_id=entry_id).exists()

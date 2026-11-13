@@ -19,6 +19,29 @@ from apps.teams.models import EntryPlayer
 MATCH_LEASE_SECONDS = 90
 LEASE_FIELDS = ["lease_token", "lease_judge", "lease_expires_at"]
 
+# События, которые должны быть привязаны к конкретному игроку заявки.
+PLAYER_REQUIRED_EVENT_TYPES = frozenset(
+    {
+        MatchEvent.Type.GOAL,
+        MatchEvent.Type.OWN_GOAL,
+        MatchEvent.Type.YELLOW,
+        MatchEvent.Type.RED,
+        MatchEvent.Type.SUBSTITUTION,
+    }
+)
+
+
+def validate_player_event_fields(
+    event_type: str, entry_id: int | None, player_id: int | None
+) -> None:
+    """Требует команду и игрока для событий, которые относятся к конкретному футболисту."""
+    if event_type not in PLAYER_REQUIRED_EVENT_TYPES:
+        return
+    if entry_id is None:
+        raise DomainValidationError("This event type requires entry_id")
+    if player_id is None:
+        raise DomainValidationError("This event type requires entry_player_id")
+
 
 def _get_match_for_update(match_id: int) -> Match:
     """Загружает строку матча под блокировкой для последовательных изменений."""
@@ -174,8 +197,7 @@ def _validate_event(match: Match, event_data: dict[str, Any]) -> MatchEvent | No
 
     if entry_id is not None and entry_id not in participant_ids:
         raise DomainValidationError("Event entry must be one of the match participants")
-    if event_type in (MatchEvent.Type.GOAL, MatchEvent.Type.OWN_GOAL) and entry_id is None:
-        raise DomainValidationError("Goal events require entry_id")
+    validate_player_event_fields(event_type, entry_id, player_id)
     if player_id is not None and (
         entry_id is None or not EntryPlayer.objects.filter(pk=player_id, entry_id=entry_id).exists()
     ):

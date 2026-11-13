@@ -15,9 +15,10 @@ class LineupPlayerIn(Schema):
 
 
 class LineupUpdateIn(Schema):
-    """Полный список игроков для замены черновика состава."""
+    """Полный список игроков и комментарий для замены черновика состава."""
 
     players: list[LineupPlayerIn]
+    comment: str = Field(default="", max_length=2000)
 
 
 class LineupPlayerOut(Schema):
@@ -41,6 +42,7 @@ class MatchLineupOut(Schema):
     entry_id: int
     lineup_id: int | None
     status: LineupStatus
+    comment: str
     players: list[LineupPlayerOut]
 
 
@@ -63,6 +65,7 @@ class JudgeLineupOut(Schema):
     team_name: str
     lineup_id: int | None
     status: LineupStatus | None
+    comment: str
     reject_reason: str
     players: list[JudgeLineupPlayerOut]
 

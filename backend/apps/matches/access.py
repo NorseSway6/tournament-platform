@@ -19,6 +19,15 @@ judge_auth = AccessTokenAuth(
 organizer_auth = tournament_organizer_auth
 
 
+def can_view_match(user, match: Match) -> bool:
+    """Проверяет, может ли пользователь видеть матч непубличного турнира."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if is_platform_admin(user) or has_tournament_access(user, match.tournament):
+        return True
+    return MatchOfficial.objects.filter(match_id=match.pk, official=user).exists()
+
+
 def require_judge_match(request: HttpRequest, match_id: int) -> None:
     """Требуется официальное назначение на запрашиваемый матч."""
     match = Match.objects.filter(pk=match_id).only("id").first()

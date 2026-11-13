@@ -52,9 +52,10 @@ def get_captain_lineup(request: HttpRequest, match_id: int):
 
 @captain_router.put("/matches/{match_id}/lineup", response=api_response(MatchLineupOut))
 def put_captain_lineup(request: HttpRequest, match_id: int, payload: LineupUpdateIn):
-    """Сохраняет состав капитана как черновик."""
+    """Сохраняет состав капитана и комментарий как черновик."""
+    data = payload.model_dump()
     return update_captain_match_lineup(
-        request_user_id(request), match_id, payload.model_dump()["players"]
+        request_user_id(request), match_id, data["players"], data["comment"]
     )
 
 
