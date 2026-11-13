@@ -7,14 +7,17 @@ from ninja.errors import HttpError
 
 from apps.common.api_errors import api_response
 from apps.common.pagination import paginate
-from apps.identity_access.api.dependencies import request_user_id
+from apps.identity_access.api.dependencies import (
+    optional_access_token_user,
+    request_user_id,
+)
 from apps.matches.access import judge_auth, require_judge_match
 from apps.matches.schemas.events import MatchEventAppendOut, MatchEventCreate, MatchEventFeedOut
 from apps.matches.schemas.public import MatchDetailOut, MatchPage, TodayOut
 from apps.matches.schemas.types import MatchStatus
 from apps.matches.selectors import (
     get_match_event_feed,
-    get_public_match,
+    get_match_for_viewer,
     parse_timezone_name,
     public_matches,
     public_matches_for_local_date,
@@ -67,8 +70,8 @@ def list_tournament_matches(
 
 @matches_router.get("/{match_id}", response=api_response(MatchDetailOut))
 def get_match(request: HttpRequest, match_id: int):
-    """Возвращает публичный матч с лентой событий."""
-    match = get_public_match(match_id)
+    """Возвращает публичный матч или матч, доступный судье/организатору."""
+    match = get_match_for_viewer(match_id, optional_access_token_user(request))
     if match is None:
         raise HttpError(404, "Match not found")
     return match
@@ -98,7 +101,7 @@ def list_match_events(
     after_seq: int = Query(0, ge=0),
 ):
     """Возвращает ленту событий после переданного номера sequence."""
-    result = get_match_event_feed(match_id, after_seq)
+    result = get_match_event_feed(match_id, after_seq, optional_access_token_user(request))
     if result is None:
         raise HttpError(404, "Match not found")
     return result

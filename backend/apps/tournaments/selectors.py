@@ -1,4 +1,4 @@
-from django.db.models import Count, Exists, OuterRef, Prefetch, QuerySet
+from django.db.models import Count, Exists, F, OuterRef, Prefetch, QuerySet
 
 from apps.matches.models import MatchEvent
 from apps.tournaments.models import Group, Round, Stage, Tournament
@@ -11,7 +11,9 @@ PUBLIC_STATUSES = [
 
 
 def public_tournaments(
-    status: str | None = None, stage_kind: str | None = None
+    status: str | None = None,
+    stage_kind: str | None = None,
+    search: str | None = None,
 ) -> QuerySet[Tournament]:
     """Возвращает публичные турниры с загруженной организацией и этапами"""
     queryset = Tournament.objects.filter(
@@ -22,6 +24,8 @@ def public_tournaments(
         queryset = queryset.filter(status=status)
     if stage_kind is not None:
         queryset = queryset.filter(stages__kind=stage_kind)
+    if search is not None and search.strip():
+        queryset = queryset.filter(name__icontains=search.strip())
     return (
         queryset.distinct()
         .select_related("organization")
@@ -34,6 +38,7 @@ def public_tournaments(
                 ),
             )
         )
+        .order_by(F("starts_on").desc(nulls_last=True), "name", "id")
     )
 
 

@@ -22,7 +22,7 @@ class MatchLineupInline(admin.TabularInline):
     model = MatchLineup
     extra = 0
     autocomplete_fields = ("entry",)
-    fields = ("entry", "status", "reject_reason")
+    fields = ("entry", "status", "comment", "reject_reason")
     show_change_link = True
 
 

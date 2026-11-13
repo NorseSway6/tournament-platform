@@ -91,6 +91,7 @@ def _lineup_payload(match: Match, entry: TournamentEntry, lineup: MatchLineup | 
         "entry_id": entry.id,
         "lineup_id": lineup.id if lineup else None,
         "status": lineup.status if lineup else MatchLineup.Status.DRAFT,
+        "comment": lineup.comment if lineup else "",
         "players": players,
     }
 
@@ -102,8 +103,10 @@ def get_captain_match_lineup(captain_id: int, match_id: int) -> dict:
     return _lineup_payload(match, entry, lineup)
 
 
-def update_captain_match_lineup(captain_id: int, match_id: int, players: list[dict]) -> dict:
-    """Заменяет черновой состав указанными активными игроками заявки."""
+def update_captain_match_lineup(
+    captain_id: int, match_id: int, players: list[dict], comment: str = ""
+) -> dict:
+    """Заменяет черновой состав и комментарий указанными активными игроками заявки."""
     with transaction.atomic():
         match, entry = captain_entry_for_match(match_id, captain_id)
         match = Match.objects.select_for_update().get(pk=match.pk)
@@ -144,8 +147,9 @@ def update_captain_match_lineup(captain_id: int, match_id: int, players: list[di
             ]
         )
         lineup.status = MatchLineup.Status.DRAFT
+        lineup.comment = comment.strip()
         lineup.reject_reason = ""
-        lineup.save(update_fields=["status", "reject_reason"])
+        lineup.save(update_fields=["status", "comment", "reject_reason"])
         return _lineup_payload(match, entry, lineup)
 
 
